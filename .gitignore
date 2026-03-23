@@ -1,1 +1,5 @@
 /data
+ibl_global_fit
+best_global_params
+__pycache__
+nemos
