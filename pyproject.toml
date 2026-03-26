@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "brainbox>=0.0.9",
     "ipykernel>=7.1.0",
     "ipympl>=0.10.0",
     "matplotlib>=3.10.8",
