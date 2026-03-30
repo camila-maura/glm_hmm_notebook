@@ -27,18 +27,17 @@ print(f"Total # of sessions {len(trials["session"].unique())}")
 print(trials.columns)
 
 # Let's extract the meaningful data: session, choice, stimulus presented on the left, stimulus presented on the right, reward obtained and probability of reward
-trials = trials[["session", "choice", "contrastLeft", "contrastRight", "feedbackType", "probabilityLeft"]]
+trials = trials[["session", "choice", "contrastLeft", "contrastRight", "feedbackType", "probabilityLeft", "session_start_time"]]
+
+print(trials["session_start_time"].unique())
 
 # We can also see what we have if we select a single session
 sessions_ids = trials.session.unique()       # Create a list of ids
-print(sessions_ids)
-
-valid_sessions = []
-t0 = time.time()
 
 # Session index
-chosen_session = 0
-session = trials[trials.session == sessions_ids[chosen_session]]   # Choose the first session for display
+#chosen_session = 0
+#session = trials[trials.session == sessions_ids#[chosen_session]]   # Choose the first session for display
+
 #print(session.head(5))
 
 #print(session["probabilityLeft"].unique())
@@ -68,12 +67,17 @@ valid_sessions = violations[
     (violations < 10) & (violations.index.isin(valid_prob_sessions[valid_prob_sessions == True].index))
 ].index.tolist()
 
+# Maintain order
+valid_set = set(valid_sessions)
+valid_sessions = [
+    s for s in trials["session"].drop_duplicates()
+    if s in valid_set
+]
 print(len(valid_sessions))
-print(valid_sessions)
 
 # Now, with the valid sessions, we can compute the design matrix. We are only interested in the 50-50 trials
 
-df_trials = trials[trials["session"].isin(valid_sessions)].copy()
+df_trials = trials[trials["session"].isin(valid_sessions)]
 
 #print(trials)
 
@@ -84,15 +88,17 @@ df_trials = trials[trials["session"].isin(valid_sessions)].copy()
 #design_matrix = df_trials[df_trials["probabilityLeft"] == 0.5].groupby("session")
 
 #print(design_matrix)
+print(df_trials.session_start_time.unique().tolist())
 eid = valid_sessions[0]
 
-print(df_trials["choice"].unique())
+print(df_trials[df_trials["probabilityLeft"] == 0.5])
 
 #### Create design matrix for a session
 df_sess = df_trials[
     (df_trials["session"] == eid) &
     (df_trials["probabilityLeft"] == 0.5)
 ]
+print("DATE", df_sess["session_start_time"])
 print(df_sess["choice"])
 
 choice = df_sess['choice'].to_numpy()
@@ -134,3 +140,5 @@ normalized_inpt = np.copy(unnormalized_inpt)
 normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 
 print(unnormalized_inpt)
+
+print(normalized_inpt)
