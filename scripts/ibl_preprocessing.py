@@ -8,6 +8,57 @@ from ashwood_preprocessing_utils import remap_choice_vals, create_previous_choic
 
 from sklearn import preprocessing
 
+def get_data_this_session(eid, df_trials):
+    df_sess = df_trials[df_trials["session"] == eid]
+
+    # We can select all the necessary values for the design matrix: choice, contrast of stimuli, reward and bias probs
+    stim_left = df_sess['contrastLeft'].to_numpy()
+    stim_right = df_sess['contrastRight'].to_numpy()
+    rewarded = df_sess['feedbackType'].to_numpy()
+    choice = df_sess['choice'].to_numpy()
+    
+    return choice, stim_left, stim_right, rewarded
+        
+def create_stim_vector(stim_left, stim_right):
+    # Create stim vector
+    stim_left = np.nan_to_num(stim_left, nan=0)
+    stim_right = np.nan_to_num(stim_right, nan=0)
+    # now get 1D stim
+    signed_contrast = stim_right - stim_left
+    
+    return signed_contrast
+
+def create_design_matrix(choice, stim_left, stim_right, rewarded):
+    # Stimuli predictor
+    signed_contrast = create_stim_vector(stim_left, stim_right)
+    T = len(signed_contrast)
+    design_mat = np.zeros((T, 3))
+    design_mat[:, 0] = signed_contrast    
+        
+    # make choice vector so that correct response for stim>0 is choice =1
+    # and is 0 for stim <0 (viol is mapped to -1)
+    choice = remap_choice_vals(choice)
+
+    previous_choice, locs_mapping = create_previous_choice_vector(choice)
+
+    # create wsls vector:
+    wsls = create_wsls_covariate(previous_choice, rewarded, locs_mapping)
+
+    # map previous choice to {-1,1}
+    design_mat[:, 1] = 2 * previous_choice - 1
+    design_mat[:, 2] = wsls
+    
+    return design_mat
+
+
+def get_all_unnormalized_data_this_session(eid, df_trials):
+    choice, stim_left, stim_right, rewarded = get_data_this_session(eid, df_trials)
+    unnormalized_design_matrix = create_design_matrix(choice, stim_left, stim_right, rewarded)
+    y = np.expand_dims(remap_choice_vals(choice), axis=1)
+    session = [eid for i in range(y.shape[0])]
+    rewarded = np.expand_dims(rewarded, axis=1)
+    return unnormalized_design_matrix, y, session, rewarded
+
 # Using ONE's ```load_aggregate``` function, we can retrieve all sessions from a given animal. For this, first we need to instantiate the ```ONE``` object
 one = ONE()
 
@@ -18,14 +69,10 @@ print(f"Total # of sessions {len(trials["session"].unique())}")
 
 #! Admonition one.search() returns session IDs (eids) that exist as session records in Alyx, while load_aggregate() downloads a pre computed file with trial data pooled across multiple sessions. If you want to get all sessions from a single animal, it is recommended to use ```load_aggregate```, because some sessions may be located in a dataframe without a session identified in itself (but containing multiple sessions with their own session identifiers). 
 
-# We are only interested in the biased choice trials, as in Ashwood
-# Pending: explanation!
-# trials_biased = trials #[trials["task_protocol"]=="biasedChoiceWorld"]
-# For now I'm not filtering because I need the .5 proba left to rule out sessions
-
 # We can see the information we get by printing the columns
 print(trials.columns)
 
+# Modeling choice as result of observables and behavioral state. We need choice, stimuli presented and reward obtained. Additionally, we want to keep the session and 
 # Let's extract the meaningful data: session, choice, stimulus presented on the left, stimulus presented on the right, reward obtained and probability of reward
 trials = trials[["session", "choice", "contrastLeft", "contrastRight", "feedbackType", "probabilityLeft", "session_start_time"]]
 
@@ -33,14 +80,6 @@ print(trials["session_start_time"].unique())
 
 # We can also see what we have if we select a single session
 sessions_ids = trials.session.unique()       # Create a list of ids
-
-# Session index
-#chosen_session = 0
-#session = trials[trials.session == sessions_ids#[chosen_session]]   # Choose the first session for display
-
-#print(session.head(5))
-
-#print(session["probabilityLeft"].unique())
 
 # In Ashwood, only the sessions with less than 10 violations were used. Thus, we will now revise the number of violations, defined as a trial where the animal made no choice. i.e choice == 0 during the 50-50 trials. For that, 1) 50-50 trials must be present and 2) there must be less than 10 violations in that subset of trials
 
@@ -67,7 +106,7 @@ valid_sessions = violations[
     (violations < 10) & (violations.index.isin(valid_prob_sessions[valid_prob_sessions == True].index))
 ].index.tolist()
 
-# Maintain order
+# Maintain original order
 valid_set = set(valid_sessions)
 valid_sessions = [
     s for s in trials["session"].drop_duplicates()
@@ -75,40 +114,30 @@ valid_sessions = [
 ]
 print(len(valid_sessions))
 
-# Now, with the valid sessions, we can compute the design matrix. We are only interested in the 50-50 trials
+print(f"current # of sessions {len(df_trials.session.unique())}")
 
-df_trials = trials[trials["session"].isin(valid_sessions)]
-
-#print(trials)
-
-#df_valid_sessions = trials[trials["session"].isin(valid_sessions)]
-
-#print("valid \n", df_valid_sessions)
-
-#design_matrix = df_trials[df_trials["probabilityLeft"] == 0.5].groupby("session")
-
-#print(design_matrix)
-print(df_trials.session_start_time.unique().tolist())
-eid = valid_sessions[0]
-
-print(df_trials[df_trials["probabilityLeft"] == 0.5])
-
-#### Create design matrix for a session
-df_sess = df_trials[
-    (df_trials["session"] == eid) &
-    (df_trials["probabilityLeft"] == 0.5)
+# Now we can select only the valid sessions
+df_trials = trials[
+    (trials["session"].isin(valid_sessions)) & (df_trials["probabilityLeft"] == 0.5)
 ]
-print("DATE", df_sess["session_start_time"])
-print(df_sess["choice"])
+print(f"current # of sessions {len(df_trials.session.unique())}")
 
+# Now, with the valid sessions, we can compute the design matrix. We are only interested in the 50-50 trials. Let's do it for a single session
+eid = valid_sessions[0]     # Select an example session
+df_sess = df_trials[df_trials["session"] == eid]
+
+# We can select all the necessary values for the design matrix: choice, contrast of stimuli, reward and bias probs
 choice = df_sess['choice'].to_numpy()
 stim_left = df_sess['contrastLeft'].to_numpy()
 stim_right = df_sess['contrastRight'].to_numpy()
 rewarded = df_sess['feedbackType'].to_numpy()
-bias_probs = df_sess['probabilityLeft'].to_numpy()
+bias_probs = df_sess['probabilityLeft'].to_numpy() #TODO I think this one is unnecesary
+
+
 # Create stim vector
 stim_left = np.nan_to_num(stim_left, nan=0)
 stim_right = np.nan_to_num(stim_right, nan=0)
+
 # now get 1D stim
 signed_contrast = stim_right - stim_left
 
@@ -117,15 +146,14 @@ design_mat = np.zeros((T, 3))
 design_mat[:, 0] = signed_contrast
 
 # make choice vector so that correct response for stim>0 is choice =1
-    # and is 0 for stim <0 (viol is mapped to -1)
-
-print(choice)
+# and is 0 for stim <0 (viol is mapped to -1)
 choice = remap_choice_vals(choice)
 
 previous_choice, locs_mapping = create_previous_choice_vector(choice)
 
 # create wsls vector:
 wsls = create_wsls_covariate(previous_choice, rewarded, locs_mapping)
+
 # map previous choice to {-1,1}
 design_mat[:, 1] = 2 * previous_choice - 1
 design_mat[:, 2] = wsls
@@ -136,9 +164,46 @@ y = np.expand_dims(remap_choice_vals(choice), axis=1)
 session = [eid for i in range(y.shape[0])]
 rewarded = np.expand_dims(rewarded, axis=1)
 
+# We then normalize our stimuli value across  for some reason? This does not yield the exact same value as ashwood because she normalizes across all animals but its quite close anyway.
 normalized_inpt = np.copy(unnormalized_inpt)
 normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 
-print(unnormalized_inpt)
+# We will carry out the exact same process but for all trials. Our design matrix each row will be a trial, so effectiveli this means that we will carry out the same process up until the normalization and then normalize.
 
-print(normalized_inpt)
+### this will. be hidden
+def get_unnormalized_design_mat(valid_sessions, df_trials):
+    sess_counter = 0
+    for eid in valid_sessions:
+        unnormalized_inpt, y, session, rewarded = \
+            get_all_unnormalized_data_this_session(
+                eid, df_trials)
+        if sess_counter == 0:
+            animal_unnormalized_inpt = np.copy(unnormalized_inpt)
+            animal_y = np.copy(y)
+            animal_session = session
+            animal_rewarded = np.copy(rewarded)
+        else:
+            animal_unnormalized_inpt = np.vstack(
+                (animal_unnormalized_inpt, unnormalized_inpt))
+            animal_y = np.vstack((animal_y, y))
+            animal_session = np.concatenate((animal_session, session))
+            animal_rewarded = np.vstack((animal_rewarded, rewarded))
+        sess_counter += 1
+    # Normalize
+    animal_normalized_inpt = np.copy(animal_unnormalized_inpt)
+    
+    animal_normalized_inpt[:, 0] = preprocessing.scale(animal_unnormalized_inpt[:, 0])
+    
+    return animal_unnormalized_inpt, animal_normalized_inpt, animal_y, animal_session
+
+#### end of hidden
+
+animal_unnormalized_inpt, animal_normalized_inpt, animal_y, animal_session = get_unnormalized_design_mat(valid_sessions, df_trials)
+# Write out animal's unnormalized data matrix:
+np.savez(
+    'scripts/IBL/_unnormalized.npz',animal_unnormalized_inpt, 
+    animal_normalized_inpt, 
+    animal_y, 
+    animal_session 
+)
+

@@ -62,29 +62,47 @@ def create_previous_choice_vector(choice):
         entry in column 2 is the location in the previous choice vector that
         this location was remapped to
     '''
+    # Lagged version of choice
     previous_choice = np.hstack([np.array(choice[0]), choice])[:-1]
+    # Finds indices where the lagged value is -1 (violations / missing previous choice).
     locs_to_update = np.where(previous_choice == -1)[0]
+    # Finds indices where the lagged value is valid (0 or 1).
     locs_with_choice = np.where(previous_choice != -1)[0]
+    # Index of the first valid previous choice in the vector.
     loc_first_choice = locs_with_choice[0]
+    # Preallocates a mapping array for violation corrections that occur after the first valid choice. Each row will store [current_loc, source_loc].
+    # before loc_first_choice → random fill (no mapping stored)
+    # after → copy from a previous valid index (mapping stored)
     locs_mapping = np.zeros((len(locs_to_update) - loc_first_choice, 2),
                             dtype='int')
 
+    # Iterates over every index where the previous choice is -1.
     for i, loc in enumerate(locs_to_update):
+        # Case: this index occurs before any valid previous choice exists.
         if loc < loc_first_choice:
-            # since no previous choice, bernoulli sample: (not output of
+            # since no previous choice, bernoulli sample: (note output of
             # bernoulli rvs is in {1, 2})
             previous_choice[loc] = bernoulli.rvs(0.5, 1) - 1
         else:
             # find nearest loc that has a previous choice value that is not
             # -1, and that is earlier than current trial
+            
+            # Restricts valid indices to those strictly before the current index.
             potential_matches = locs_with_choice[
                 np.where(locs_with_choice < loc)]
+            # Computes distance from current index to each earlier valid index.
             absolute_val_diffs = np.abs(loc - potential_matches)
+            # Finds the closest earlier valid index (smallest distance).
             absolute_val_diffs_ind = absolute_val_diffs.argmin()
+            # Retrieves that nearest index.
             nearest_loc = potential_matches[absolute_val_diffs_ind]
+            # Stores the current index being corrected.
             locs_mapping[i - loc_first_choice, 0] = int(loc)
+            # Stores the index it copies from
             locs_mapping[i - loc_first_choice, 1] = int(nearest_loc)
+            # Imputes the missing value by copying the nearest previous valid choice (effectively a backward search, but equivalent to last-observation-carried-forward).
             previous_choice[loc] = previous_choice[nearest_loc]
+    # Checks that the final vector contains only binary values (0 and 1).
     assert len(np.unique(
         previous_choice)) <= 2, "previous choice should be in {0, 1}; " + str(
         np.unique(previous_choice))

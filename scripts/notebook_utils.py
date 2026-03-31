@@ -25,3 +25,4 @@ def load_data(animal_file):
     y = data[1]
     session = data[2]
     return inpt, y, session
+
