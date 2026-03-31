@@ -8,6 +8,7 @@ dependencies = [
     "brainbox>=0.0.9",
     "ipykernel>=7.1.0",
     "ipympl>=0.10.0",
+    "jupytext>=1.19.1",
     "matplotlib>=3.10.8",
     "numpy<=2.3.5",
     "seaborn>=0.13.2",
