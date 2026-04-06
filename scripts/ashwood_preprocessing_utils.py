@@ -126,7 +126,8 @@ def create_wsls_covariate(previous_choice, success, locs_mapping):
     # remap previous choice vals to {-1, 1}
     remapped_previous_choice = 2 * previous_choice - 1
     #previous_reward = np.hstack([np.array(success[0]), success])[:-1]
-    previous_reward = np.hstack([np.array(success[0]), success])[:-1]
+    #previous_reward = np.hstack([np.array(success[0]), success])[:-1]
+    previous_reward = np.hstack([np.array(success.iloc[0]), success])[:-1]
     # Now need to go through and update previous reward to correspond to
     # same trial as previous choice:
     for i, loc in enumerate(locs_mapping[:, 0]):
