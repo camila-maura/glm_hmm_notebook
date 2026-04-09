@@ -112,8 +112,9 @@ def create_previous_choice_vector(choice):
 def create_wsls_covariate(previous_choice, success, locs_mapping):
     '''
     inputs:
-    success: vector of size T, entries are in {-1, 1} and 0 corresponds to
+    success: vector of size T, entries are in {-1, 1} and -1 corresponds to
     failure, 1 corresponds to success
+
     previous_choice: vector of size T, entries are in {0, 1} and 0
     corresponds to left choice, 1 corresponds to right choice
     locs_mapping: location remapping dictionary due to violations
