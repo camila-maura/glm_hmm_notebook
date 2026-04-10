@@ -15,32 +15,25 @@
 
 # %% [markdown]
 # # Inferring behavioral strategies during decision making using GLM-HMMs
-# Decision-making is used to be often treated as a stable process: given the same stimulus, an animal is assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not from stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: can we infer these latent behavioral strategies directly from observed choices?
+# One could think of Decision-making as a stable process: given the same stimulus, an animal is assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: How can we infer these latent behavioral strategies directly from observed choices?
 #
 # In this notebook, we address this question using the GLM-HMM framework, which combines a generalized linear model (GLM) with a hidden Markov model (HMM) to capture both how decisions change as a function of stimuli and how strategies evolve over time. We will show how to use choice data to recover hidden behavioral states using the NeMoS implementation of a Bernoulli GLM-HMM, replicating the main findings of Ashwood et al. (2022)<span id="cite1b"></span><a href="#ref1">[PENDING]</a>.
 #
-# We have two main goals for this notebook:
+# We have four main goals for this tutorial:
 #
-# 1. How to use GLM-HMM to analyze real data / real world application.
+# 1. Explain how to preprocess real mice data from the [International Brain Laboratory (IBL) - PENDING]()
+# 2. Show how to create a design matrix with different behavioral predictors
+# 3. Show how to fit choice data using a GLM-HMM
+# 4. Show how to interpret GLm-HMM fitting results
 #
-#     1.1 Showcase how to download and preprocess choice data from the IBL to fit it with a GLM-HMM
-# 2. Demonstrate how to replicate published results using NeMoS
 #
 # Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs. If you need an explanation, please refer to our tutorials on GLMs and GLM-HMMs. Moreover, if you already have a good understanding of GLM-HMMs and are interested in different heuristics you could use to overcome difficulties in the fitting process, please refer to our tutorial for fine-grain details of the fitting algorithm and different initialization methods you could use to ensure the best possible fit and thus description of your data under this model.
 
 # %% [markdown]
 # ## GLM-HMMs
-# GLM-HMMs, also known as input-out HMM (Bengio & Frasconi, 1995) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, models are useful to analyze how hidden latent states affect observable behavioral (Ashwood et al., 2022) <span id="cite1b"></span><a href="#ref1">[1b]</a> and neural (Escola et al., 2011)<span id="cite1b"></span><a href="#ref1">[PENDING]</a> dynamics. These models are composed by an HMM governing the distribution over the latent states and state-specific GLMs, which specify the activity of the system at each state.
+# GLM-HMMs, also known as input-out HMM (Bengio & Frasconi, 1995) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, models are useful to analyze how hidden latent states affect observable behavioral (Ashwood et al., 2022) <span id="cite1b"></span><a href="#ref1">[1b]</a> and neural (Escola et al., 2011)<span id="cite1b"></span><a href="#ref1">[PENDING]</a> dynamics. These models are composed by an HMM, governing the distribution over the latent states, and state-specific GLMs, which specify the activity of the system at each state.
 #
 # <center><img src="images/graphical_model.png" alt="Graphical model of GLM-HMM" width="800" /></center>
-#
-# <div style="text-align: center;">
-#   Graphical model of a GLM-HMM. 
-# </div>
-#
-# The state $z_t$ at time $t$ is only dependent on the previous one $z_{t-1}$. The observation $y_t$ is independent from all the others conditioned on the hidden state $z_t$.  Moreover, the observation is dictated by the GLM parameters $GLM_{z_t}$, conditioned on the state $z_t$. GLMs are models that describe how the output of a system $y_t$ varies as a function of input $x_t$ 
-#
-# In this notebook, we will extract hidden behavioral states using observed behavior from a mouse (choices). Thanks to the GLM component, we will also see how these hidden states and observable predictors (stimulus intensity, previous action, win-stay lose-shift strategy) 
 
 # %% [markdown]
 # In all GLM-HMMs, the HMM component is fully defined by three elements: a state transition matrix, an initial probability vector and an emissions probability distribution (Bishop, 2006)<span id="cite1b"></span><a href="#ref1">[PENDING]</a>. A HMM with K hidden states has a $K \times K$ transition matrix that specifies the probability of transitioning from any state to any other,
@@ -61,7 +54,7 @@
 # \begin{align}
 # p(y_t=1\mid\boldsymbol{x}_t, z_t = k)  = \frac{1}{1+exp(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)}
 # \end{align}
-# considering that the current implementation of GLM-HMM uses a logistic inverse link function.
+# considering a GLM-HMM with a logistic inverse link function.
 
 # %% [markdown]
 # ## 00. Imports
@@ -71,7 +64,6 @@
 import nemos as nmo
 from nemos.glm_hmm import GLMHMM
 nmo.GLMHMM = GLMHMM # this is the only way I got the GLM HMM module to work when using my own installation...I don't really know why but it won't be a problem when we release anyway
-
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -79,11 +71,10 @@ import numpy as np
 import pynapple as nap
 import seaborn as sns
 from one.api import ONE
-import numpy as np
 from sklearn import preprocessing
 import matplotlib.pyplot as plt
-from notebook_utils import * 
 
+# %% tags=["hide-input"]
 seed = 65  # Random seed for reproducibility
 np.random.seed(seed)
 jax.config.update("jax_enable_x64", True)
@@ -91,8 +82,6 @@ jax.config.update("jax_enable_x64", True)
 # Parameters for plotting
 custom_params = {"axes.spines.right": False, "axes.spines.top": False}
 sns.set_theme(style="ticks", palette="colorblind", font_scale=1.5, rc=custom_params)#, context="notebook")
-
-
 
 # %% [markdown]
 # ## 01. Downloading the data and understanding the task structure: IBL decision-making task
@@ -200,7 +189,7 @@ df_trials = trials[
 print(f"# of sessions after restrictions {len(df_trials.session.unique())}")
 
 # %% [markdown]
-# ## Building the design matrix
+# ## 02. Building the design matrix
 # Now, with the valid sessions, we can compute the design matrix. In our case, we are interested in building a design matrix with three predictors: stimuli, previous choice and win stay lose shift.
 #
 # <center><img src="images/design_matrix_table.png" alt="Task schematic" width="1100" /></center>
@@ -295,7 +284,7 @@ X = normalized_inpt.copy()
 
 plt.figure(figsize=(6,8))
 
-plt.imshow(X, aspect="auto", cmap="coolwarm", interpolation="nearest")
+plt.imshow(X, aspect="auto", cmap="coolwarm",)
 
 plt.colorbar(label="value")
 
@@ -475,7 +464,7 @@ print(f"choices tsd \n {choices_tsd} \n")
 print(f"time support\n {choices_tsd.time_support}")
 
 # %% [markdown]
-# ## Fitting a GLM-HMM with NeMoS (Maximum Likelihood)
+# ## 03. Fitting a GLM-HMM with NeMoS (Maximum Likelihood)
 # As mentioned above, we will use a Bernoulli GLM to model this mouse's choices. For this, we first you need to initialize the ```GLMHMM``` object. The only mandatory thing you have to declare is the number of states. In Ashwood et al. (2022) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, they found that most mice used 3 decision-making states when performing the task. Thus, in our case, we will initialize the ```GLMHMM``` object with 3 states. 
 #
 # ! admonition The default observation model for the GLM-HMM is this model is Bernoulli, but we also have Categorical (Multinomial), Poisson, Gamma, Negative Binomial and Gaussian available. Moreover, if desired, you can also set a different observation model of your choice. You can also personalize the inverse link function. Convexity non guaranteed for all likelihood functions, refer to Escola paper and also to the other notebook.
@@ -511,14 +500,40 @@ print(model)
 # Probably point them to the other notebook
 
 # %%
+# indices where a new session starts
+#new_sess_idx = np.where(new_sess_mouse == 1)[0][1:] # skip first
+
+# insert NaNs before each new session start
+#choices_with_nan = np.insert(choices_mouse.astype(float), new_sess_idx, np.nan)
+
+# insert rows of NaNs at session boundaries
+#design_mat_with_nan = np.insert(design_matrix, new_sess_idx, np.nan, axis=0)
+
+# NaNs in choices
+#model.fit(design_matrix, choices_with_nan)
+# Error: X and y must have the same number of samples
+
+# try both with nans
+#model.fit(design_mat_with_nan, choices_with_nan)
+# Error: GLM-HMM requires continuous time-series data. NaN values must only appear at the beginning or end of the data, not in the middle.
+
+# %%
 model.fit(design_matrix, choices_tsd)
-# init_params -> check docstring
+
+# %% tags=["hide-input"]
+permutation = jnp.array([1, 2, 0])
+model.coef_ = model.coef_[:, permutation]
+model.intercept_ = model.intercept_[permutation]
+model.transition_prob_ = model.transition_prob_[permutation][:, permutation]
 
 # %% [markdown]
 # If we want to see our glm-hmm parameters, we can call ```model.coef_```. This will output the coefficients of the glm per state, with shape (n_features, n_states)
 
 # %%
-model.coef_
+model.coef_.shape
+
+# %%
+model.coef_ 
 
 # %% [markdown]
 # Similarly, to see the intercept, we can call ```model.intercept_```, which will output the intercept per state. The shape of this object is (n_states)
@@ -528,12 +543,15 @@ model.intercept_
 
 
 # %% [markdown]
+# ## 04. Interpreting the fitting results
+
+# %% [markdown]
 # ### Plot 2e: glm weights
 
 # %% [markdown]
 # Ashwood: Inferred GLM weights for the three-state model. State 1 weights have a large weight on the stimulus, indicating an ‘engaged’ or high-accuracy state. In states 2 and 3, the stimulus weight is small, and the bias weights give rise to large leftward (state 2) and rightward (state 3) biases.
 #
-# GLM weights, which define how the animal makes decisions in each state (Fig. 2e). One of these GLMs (‘state 1’) had a large weight on the stimulus and negligible weights on other inputs, giving rise to high-accuracy performance on the task (Fig. 2f). The other two GLMs (‘state 2’ and ‘state 3’), by comparison, had smaller weights on the stimulus and relatively large bias weights.
+# GLM weights, which define how the animal makes decisions in each state (Fig. 2e). One of these GLMs (‘state 1’) had a large weight on the stimulus and negligible weights on other inputs, giving rise to high-accuracy performance on the task (Fig. 2f). The other two GLMs (‘state 2’ and ‘state 3’), by comparison, had smaller weights on the stimulus and relatively large bias weights
 
 # %% slideshow={"slide_type": "slide"}
 def plot_glm_weights(
@@ -717,67 +735,6 @@ plt.show()
 
 
 # %% [markdown]
-# ### Plot 2f: accuracy per state
-# Ashwood: Overall accuracy of this mouse (gray) and accuracy for each of the three states. g, Psychometric curve for each state, conditioned on previous reward and previous choice.
-#
-# Although this mouse had an overall accuracy of 80%, it achieved 90% accuracy in the engaged state compared to only 60% and 58% accuracy in the two biased states (Fig. 2f).
-
-# %%
-unnormalized_inpt, _, _ = load_data("IBL/CSHL_008" +
-                                        '_unnormalized.npz')
-accuracies_to_plot = []
-not_zero_loc = np.where(unnormalized_inpt[:, 0] != 0)[0] # unnormalized input 
-
-correct_ans = (np.sign(unnormalized_inpt[not_zero_loc, 0]) + 1) / 2
-acc = np.sum(choices_mouse[not_zero_loc] == correct_ans) / len(correct_ans)
-accuracies_to_plot.append(acc) # Append total accuracy
-
-for state in range(n_states): # Append accuracy per state
-    # index of time points where the most likely state is 0
-    #idx_of_interest = np.where(model.decode_state(X_mouse,choices_mouse, state_format = "index")==state) 
-    # viterbi yields a slightly different result
-    
-    posterior_probs = model.smooth_proba(design_matrix, choices_mouse)
-    idx_of_interest = np.where(posterior_probs[:, state] >= 0.9)[0]
-    
-    # viterbi to get label and filter posterior to pick the states
-    # do both and explain differences?
-    
-    inpt_this_state, unnormalized_inpt_this_state, y_this_state = \
-        design_matrix[idx_of_interest, :], unnormalized_inpt[idx_of_interest, :], \
-        choices_mouse[idx_of_interest]
-
-    not_zero_loc = np.where(unnormalized_inpt_this_state[:, 0] != 0)[0]
-    
-    correct_ans = (np.sign(unnormalized_inpt_this_state[not_zero_loc, 0]) + 1) / 2
-    acc = np.sum(y_this_state[not_zero_loc] == correct_ans) / len(correct_ans)
-    accuracies_to_plot.append(acc)
-    
-cols = [
-        '#ff7f00', '#4daf4a', '#377eb8', '#f781bf', '#a65628', '#984ea3',
-        '#999999', '#e41a1c', '#dede00'
-    ]
-
-fig = plt.figure(figsize=(6, 5))
-plt.subplots_adjust(left=0.4, bottom=0.3, right=0.95, top=0.95)
-for z, acc in enumerate(accuracies_to_plot):
-    if z == 0:
-        col = 'grey'
-    else:
-        col = cols[z - 1]
-    plt.bar(z, acc*100, width=0.8, color=col)
-    plt.text(z, acc*100 + 1, f"{acc*100:.2f}", ha='center', va='bottom', fontsize=12)
-
-plt.ylim((50, 100))
-plt.xticks([0, 1, 2, 3], ['All', '1', '2', '3'], fontsize=10)
-plt.yticks([50, 75, 100], fontsize=10)
-plt.xlabel('state', fontsize=10)
-plt.ylabel('accuracy (%)', fontsize=10, labelpad=-0.5)
-plt.gca().spines['right'].set_visible(False)
-plt.gca().spines['top'].set_visible(False)
-plt.show()
-
-# %% [markdown]
 # ### 3a. Posterior state probabilities
 # We can also show the posterior state probabilities.
 #
@@ -839,6 +796,97 @@ for example_session in range(len(ax)):
                 [0, 0.5, 1], 
                 [" ", " ", " "], 
             )
+
+# %% [markdown]
+# ### Plot 2f: accuracy per state
+# Ashwood: Overall accuracy of this mouse (gray) and accuracy for each of the three states. g, Psychometric curve for each state, conditioned on previous reward and previous choice.
+#
+# Although this mouse had an overall accuracy of 80%, it achieved 90% accuracy in the engaged state compared to only 60% and 58% accuracy in the two biased states (Fig. 2f).
+
+# %%
+cols = [
+        '#ff7f00', '#4daf4a', '#377eb8', '#f781bf', '#a65628', '#984ea3',
+        '#999999', '#e41a1c', '#dede00'
+    ]
+
+state_occupancies = []
+for state in range(n_states):
+    # Using viterbi
+    #idx_of_interest = np.where(model.decode_state(design_matrix,choices_mouse, state_format = "index")==state)[0] 
+    
+    # Ashwood way
+    posterior_probs = model.smooth_proba(design_matrix, choices_mouse)
+    states_max_posterior = np.argmax(posterior_probs, axis=1)
+    idx_of_interest = np.where(states_max_posterior == state)[0]
+    occ = len(idx_of_interest)/len(choices_mouse)
+    state_occupancies.append(occ)
+
+#unnormalized_inpt, _, _ = load_data("IBL/CSHL_008" +
+#                                        '_unnormalized.npz')
+accuracies_to_plot = []
+not_zero_loc = np.where(unnormalized_inpt[:, 0] != 0)[0] # unnormalized input 
+
+correct_ans = (np.sign(unnormalized_inpt[not_zero_loc, 0]) + 1) / 2
+acc = np.sum(choices_mouse[not_zero_loc] == correct_ans) / len(correct_ans)
+accuracies_to_plot.append(acc) # Append total accuracy
+
+for state in range(n_states): # Append accuracy per state
+    # index of time points where the most likely state is 0
+    #idx_of_interest = np.where(model.decode_state(X_mouse,choices_mouse, state_format = "index")==state) 
+    # viterbi yields a slightly different result
+    
+    posterior_probs = model.smooth_proba(design_matrix, choices_mouse)
+    idx_of_interest = np.where(posterior_probs[:, state] >= 0.9)[0]
+    
+    # viterbi to get label and filter posterior to pick the states
+    # do both and explain differences?
+    
+    inpt_this_state, unnormalized_inpt_this_state, y_this_state = \
+        design_matrix[idx_of_interest, :], unnormalized_inpt[idx_of_interest, :], \
+        choices_mouse[idx_of_interest]
+
+    not_zero_loc = np.where(unnormalized_inpt_this_state[:, 0] != 0)[0]
+    
+    correct_ans = (np.sign(unnormalized_inpt_this_state[not_zero_loc, 0]) + 1) / 2
+    acc = np.sum(y_this_state[not_zero_loc] == correct_ans) / len(correct_ans)
+    accuracies_to_plot.append(acc)  
+    
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+# --- Left: state occupancies ---
+ax = axes[0]
+for z, occ in enumerate(state_occupancies):
+    ax.bar(z, occ, width=0.8, color=cols[z])
+    ax.text(z, occ, f"{occ:.2f}", ha='center', va='bottom', fontsize=10)
+
+ax.set_ylim(0, 1)
+ax.set_xticks([0, 1, 2])
+ax.set_xticklabels(['1', '2', '3'])
+ax.set_yticks([0, 0.5, 1])
+ax.set_xlabel('state')
+ax.set_ylabel('frac. occupancy')
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+
+# --- Right: accuracies ---
+ax = axes[1]
+for z, acc in enumerate(accuracies_to_plot):
+    col = 'grey' if z == 0 else cols[z - 1]
+    ax.bar(z, acc * 100, width=0.8, color=col)
+    ax.text(z, acc * 100 + 1, f"{acc*100:.2f}", ha='center', va='bottom', fontsize=10)
+
+ax.set_ylim(50, 100)
+ax.set_xticks([0, 1, 2, 3])
+ax.set_xticklabels(['All', '1', '2', '3'])
+ax.set_yticks([50, 75, 100])
+ax.set_xlabel('state')
+ax.set_ylabel('accuracy (%)')
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+
+plt.tight_layout()
+plt.show()
 
 # %% [markdown]
 # ## should add fraction of occupancy and fraction of session with number of state changes
