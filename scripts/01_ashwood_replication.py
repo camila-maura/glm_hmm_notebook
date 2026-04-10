@@ -50,7 +50,7 @@
 # \begin{equation}
 # y_t \mid \boldsymbol{x}, \boldsymbol{k} \sim Ber(f(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)) \\
 # \end{equation}
-# where $\boldsymbol{w}_k \in \mathbb{R}^M$ denotes the GLM weights for latent state $k \in {1,..,K}$. Thus, the probability of success ($y_t = 1$, which can correspond to a given choice in a binary set up, or a spike count for a time bin) given the input vector $\boldsymbol{x}_t$ is given by:
+# where $\boldsymbol{w}_k \in \mathbb{R}^M$ denotes the GLM weights for latent state $k \in {1,..,K}$. Thus, the probability of success ($y_t = 1$, which can correspond to a given choice in a binary set up, or a spike count for a time bin; in our case, corresponds to a rightward choice) given the input vector $\boldsymbol{x}_t$ is given by:
 # \begin{align}
 # p(y_t=1\mid\boldsymbol{x}_t, z_t = k)  = \frac{1}{1+exp(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)}
 # \end{align}
@@ -113,23 +113,41 @@ print(trials.columns)
 # ! Admonition one.search() returns session IDs (eids) that exist as session records in Alyx, while load_aggregate() downloads a pre computed file with trial data pooled across multiple sessions. If you want to get all sessions from a single animal, it is recommended to use ```load_aggregate```, because some sessions may be located in a dataframe without a session identified in itself (but containing multiple sessions with their own session identifiers). 
 
 # %% [markdown]
-# We are modeling choice as result of observables and behavioral state. Thus, we need choice, stimuli presented and reward obtained. Additionally, we want to keep the session identifier, date of occurence for plotting. Furthermore, in this task, the probability of the stimulus being in the left or the right side of the screen changes over time within a session. Thus, we also want the information of the probability of the stimulus being in a given position.
+# We are modeling choice as result of observables and behavioral state. Thus, we need choice, stimuli presented and reward obtained. Additionally, we want to keep the session identifier to know when sessions start and end and for plotting. Furthermore, in this task, the probability of the stimulus being in the left or the right side of the screen changes over time within a session. Thus, we also want the information of the probability of the stimulus appearing in a given position.
 #
 # | Variable            | Description |
 # |---------------------|-------------|
-# | session             | id of session |
-# | choice              | mouse choice: 1 = correct response for stimulus on left, -1 = correct response for stimulus on right, 0 = violation (no response) |
+# | choice              | mouse choice: 1 = choice left, -1 = choice right, 0 = violation (no response within the trial period) |
 # | contrastLeft        | contrast of stimulus presented on the left |
 # | contrastRight       | contrast of stimulus presented on the right |
-# | feedbackType        | reward obtained |
-# | probabilityLeft     | probability of stimulus being presented on the right |
-# | session_start_time  | date and time of start of session |
+# | feedbackType        | reward obtained: 1 = success, -1 = failure |
+# | probabilityLeft     | probability of stimulus being presented on the left of the screen |
+# | session             | id of session |
 #
-# Let's extract the meaningful data
+# Let's extract the meaningful data and see how it looks
 # %%
-trials = trials[["session", "choice", "contrastLeft", "contrastRight", "feedbackType", "probabilityLeft", "session_start_time"]]
+trials = trials[["choice", "contrastLeft", "contrastRight", "feedbackType", "probabilityLeft", "session"]]
+
+print(f"choice \nvalues: {trials.choice.unique()}, data type: {trials.choice.dtype}, shape:  \n")
+print(f"contrast left \nvalues: {trials.contrastLeft.unique()}, data type: {trials.contrastLeft.dtype} \n")
+
+print(f"contrast right \nvalues: {trials.contrastRight.unique()}, data type: {trials.contrastRight.dtype} \n")
+
+print(f"reward \nvalues: {trials.feedbackType.unique()}, data type: {trials.feedbackType.dtype} \n")
+
+print(f"probability of stimulus on left \nvalues: {trials.probabilityLeft.unique()}, data type: {trials.probabilityLeft.dtype} \n")
+
+print(f"session \n(some) values: {trials.session.unique()[:5]}, data type: {trials.session.dtype}\n")
 # %% [markdown]
-# Now, we will restrict the analysis to the first 90 trials of each session. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5). In that regime, choices are driven primarily by sensory evidence rather than learned expectations about stimulus probability. After trial 90, the task switches to a block structure in which the left stimulus occurs with probability 0.8 or 0.2, alternating across blocks within the session.
+# Since we have constructed our model as a Bernoulli with $y_t = 1$ corresponding to rightward choice, we will remap our choices now to match that. 
+
+# %%
+# Old: right == -1, left == 1, violation == 0
+# New: right == 1, left == 0, violation == -1
+trials.choice = trials.choice.replace({1: 0, -1: 1, 0: -1})
+
+# %% [markdown]
+# Now, we will restrict the analysis to the first 90 trials of each session. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5). In this regime, choices are driven primarily by sensory evidence rather than learned expectations about stimulus probability. After trial 90, the task switches to a block structure in which the left stimulus occurs with probability 0.8 or 0.2, alternating across blocks within the session.
 
 # %%
 # Choose example session
@@ -164,10 +182,11 @@ valid_prob_sessions = (
       .agg(lambda x: set(x.unique()) == {0.2, 0.5, 0.8})
 )
 # Compute violations only on 50-50 trials
+viol_val = -1
 violations = (
     df_trials[df_trials["probabilityLeft"] == 0.5]
     .groupby("session")["choice"]
-    .apply(lambda x: (x == 0).sum())
+    .apply(lambda x: (x == viol_val).sum())
 )
 # Apply both restrictions
 valid_sessions = violations[
@@ -225,35 +244,61 @@ print(signed_contrast)
 # Now we will create the next predictor: previous choice
 
 # %%
-# Remap values to {1,0,-1}
-# # raw choice vector has CW = 1 (correct response for stim on left),
-    # CCW = -1 (correct response for stim on right) and viol = 0.  Let's
-    # remap so that CW = 0, CCw = 1, and viol = -1
-choice = choice.replace({1: 0, -1: 1, 0: -1})
-# Get rid of violation trials i.e trials where the mouse didn't make a choice
-# previous choice vector getting rid of violation trials
-valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1
-valid_choices = choice[valid_choices_idx]
-# Shift the array elements one position to the right
-previous_choice = np.roll(valid_choices, 1)
-# Set first choice as first previous_choice
-previous_choice[0] = valid_choices[0]
-print(previous_choice)
+remap = False
+if remap == True:
+    # Remap values to {1,0,-1}
+    # # raw choice vector has CW = 1 (correct response for stim on left),
+        # CCW = -1 (correct response for stim on right) and viol = 0.  Let's
+        # remap so that CW = 0, CCw = 1, and viol = -1
+    choice = choice.replace({1: 0, -1: 1, 0: -1})
+    # Get rid of violation trials i.e trials where the mouse didn't make a choice
+    # previous choice vector getting rid of violation trials
+    valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1
+    valid_choices = choice[valid_choices_idx]
+    # Shift the array elements one position to the right
+    previous_choice = np.roll(valid_choices, 1)
+    # Set first choice as first previous_choice
+    previous_choice[0] = valid_choices[0]
+    print(previous_choice)
+else:
+    # Get rid of violation trials i.e trials where the mouse didn't make a choice
+    # previous choice vector getting rid of violation trials
+    valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1 in the choice column
+    valid_choices = choice[valid_choices_idx]
+    # Shift the array elements one position to the right
+    previous_choice = np.roll(valid_choices, 1)
+    # Set first choice as first previous_choice
+    previous_choice[0] = valid_choices[0]
+    print(previous_choice)
 
 # %% [markdown]
 # Now we will compute the final predictor: win-stay lose-shift
 # %%
-# remap previous choice vals to {-1, 1}
-remapped_previous_choice = 2 * previous_choice - 1
-# Keep only rewards corresponding to valid trials
-valid_rewards = rewarded[valid_choices_idx]
-# Shift the array elements one position to the right
-previous_reward = np.roll(valid_rewards, 1)
-# Set first choice as first previous_choice
-previous_reward[0] = valid_rewards[0]
-# wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
-wsls = previous_reward * remapped_previous_choice
-print(wsls)
+if remap == True:
+    # remap previous choice vals to {-1, 1}
+    remapped_previous_choice = 2 * previous_choice - 1
+    # Keep only rewards corresponding to valid trials
+    valid_rewards = rewarded[valid_choices_idx]
+    # Shift the array elements one position to the right
+    previous_reward = np.roll(valid_rewards, 1)
+    # Set first choice as first previous_choice
+    previous_reward[0] = valid_rewards[0]
+    # wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
+    wsls = previous_reward * remapped_previous_choice
+    print(wsls)
+
+else:
+    # remap previous choice vals to {-1, 1} to match 1 <- rightward evidence and -1 <- leftward evidence
+    remapped_previous_choice = 2 * previous_choice - 1
+    # Keep only rewards corresponding to valid trials
+    valid_rewards = rewarded[valid_choices_idx]
+    # Shift the array elements one position to the right
+    previous_reward = np.roll(valid_rewards, 1)
+    # Set first choice as first previous_choice
+    previous_reward[0] = valid_rewards[0]
+    # wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
+    wsls = previous_reward * remapped_previous_choice
+    print(wsls)
 
 # %% [markdown]
 # Now can create our design matrix and fill it with the three vectors: stimuli, previous choice and wsls.
@@ -266,7 +311,7 @@ n_trials = len(signed_contrast)
 design_mat = np.zeros((n_trials, 3))
 # Add signed_contrast in the first predictor in the design matrix
 design_mat[:, 0] = signed_contrast
-# map previous choice to {-1,1} and add to second predictor in the design matrix
+# remap previous choice vals to {-1, 1} to match 1 <- rightward evidence and -1 <- leftward evidence
 design_mat[:, 1] = 2 * previous_choice - 1
 # Add wsls as third predictor in the design matrix
 design_mat[:, 2] = wsls
@@ -377,7 +422,7 @@ def create_design_matrix(choice, stim_left, stim_right, rewarded):
 
     # make choice vector so that correct response for stim>0 is choice =1
     # and is 0 for stim <0 (viol is mapped to -1)
-    choice = remap_choice_vals(choice)
+    #choice = remap_choice_vals(choice)
     valid_choices, valid_choices_idx = get_valid_choice(choice)
     previous_choice = create_previous_choice_vector(valid_choices)
 
@@ -398,7 +443,9 @@ def create_design_matrix(choice, stim_left, stim_right, rewarded):
 def get_all_unnormalized_data_this_session(eid, df_trials):
     choice, stim_left, stim_right, rewarded = get_data_this_session(eid, df_trials)
     unnormalized_design_matrix = create_design_matrix(choice, stim_left, stim_right, rewarded)
-    y = np.expand_dims(remap_choice_vals(choice), axis=1)
+    #y = np.expand_dims(remap_choice_vals(choice), axis=1)
+    valid_choices, _ = get_valid_choice(choice)
+    y = np.expand_dims(valid_choices, axis=1)
     session = [eid for i in range(y.shape[0])]
     rewarded = np.expand_dims(rewarded, axis=1)
     return unnormalized_design_matrix, y, session, rewarded
