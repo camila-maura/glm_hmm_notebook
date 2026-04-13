@@ -51,7 +51,7 @@
 # \begin{equation}
 # y_t \mid \boldsymbol{x}, \boldsymbol{k} \sim Ber(f(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)) \\
 # \end{equation}
-# where $\boldsymbol{w}_k \in \mathbb{R}^M$ denotes the GLM weights for latent state $k \in {1,..,K}$. Thus, the probability of success ($y_t = 1$, which can correspond to a given choice in a binary set up, or a spike count for a time bin; in our case, corresponds to a rightward choice) given the input vector $\boldsymbol{x}_t$ is given by:
+# where $\boldsymbol{w}_k \in \mathbb{R}^M$ denotes the GLM weights for latent state $k \in {1,..,K}$. Thus, the probability of success ($y_t = 1$, which can correspond to a given choice in a binary set up, or a spike count for a time bin; in our case, corresponds to a leftward choice) given the input vector $\boldsymbol{x}_t$ is given by:
 # \begin{align}
 # p(y_t=1\mid\boldsymbol{x}_t, z_t = k)  = \frac{1}{1+exp(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)}
 # \end{align}
@@ -148,7 +148,7 @@ print(f"session \n(some) values: {trials.session.unique()[:5]}, data type: {tria
 # %%
 # Old: right == -1, left == 1, violation == 0
 # New: right == 1, left == 0, violati3on == -1
-trials.choice = trials.choice.replace({1: 0, -1: 1, 0: -1})
+#trials.choice = trials.choice.replace({1: 0, -1: 1, 0: -1})
 
 # %% [markdown]
 # Now, we will restrict the analysis to the first 90 trials of each session. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5). In this regime, choices are driven primarily by sensory evidence rather than learned expectations about stimulus probability. After trial 90, the task switches to a block structure in which the left stimulus occurs with probability 0.8 or 0.2, alternating across blocks within the session.
@@ -186,7 +186,7 @@ valid_prob_sessions = (
       .agg(lambda x: set(x.unique()) == {0.2, 0.5, 0.8})
 )
 # Compute violations only on 50-50 trials
-viol_val = -1
+viol_val = 0
 violations = (
     df_trials[df_trials["probabilityLeft"] == 0.5]
     .groupby("session")["choice"]
@@ -241,7 +241,7 @@ stim_left = np.nan_to_num(stim_left, nan=0)
 stim_right = np.nan_to_num(stim_right, nan=0)
 
 # now get 1D stim
-signed_contrast = stim_right - stim_left
+signed_contrast = stim_left - stim_right
 print(signed_contrast)
 
 # %% [markdown]
@@ -252,7 +252,7 @@ print(signed_contrast)
 # previous choice vector getting rid of violation trials
 
 # violation mask is going to change
-valid_choices_idx = np.where(~choice.isin([viol_val]))[0]      # violations are -1 in the choice column
+valid_choices_idx = np.where(~choice.isin([viol_val]))[0]
 valid_choices = choice[valid_choices_idx]
 # Shift the array elements one position to the right
 previous_choice = np.roll(valid_choices, 1)
@@ -265,7 +265,7 @@ print(previous_choice)
 # %%
 # choice change of mapping will also change this probably
 # remap previous choice vals to {-1, 1} to match 1 -> rightward evidence and -1 -> leftward evidence
-remapped_previous_choice = 2 * previous_choice - 1
+remapped_previous_choice = previous_choice
 # Keep only rewards corresponding to valid trials
 valid_rewards = rewarded[valid_choices_idx]
 # Shift the array elements one position to the right
@@ -288,7 +288,7 @@ design_mat = np.zeros((n_trials, 3))
 # Add signed_contrast in the first predictor in the design matrix
 design_mat[:, 0] = signed_contrast
 # remap previous choice vals to {-1, 1} to match 1 -> rightward evidence and -1 -> leftward evidence
-design_mat[:, 1] = 2 * previous_choice - 1
+design_mat[:, 1] = previous_choice #2 * previous_choice - 1
 # Add wsls as third predictor in the design matrix
 design_mat[:, 2] = wsls
 
@@ -348,7 +348,8 @@ def create_stim_vector(stim_left, stim_right):
     stim_left = np.nan_to_num(stim_left, nan=0)
     stim_right = np.nan_to_num(stim_right, nan=0)
     # now get 1D stim
-    signed_contrast = stim_right - stim_left
+    #signed_contrast = stim_right - stim_left
+    signed_contrast = stim_left - stim_right
     return signed_contrast
 
 def create_wsls_covariate(previous_choice, rewarded, valid_choices_idx):
@@ -366,7 +367,7 @@ def create_wsls_covariate(previous_choice, rewarded, valid_choices_idx):
     failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
     '''
     # remap previous choice vals to {-1, 1}
-    remapped_previous_choice = 2 * previous_choice - 1
+    remapped_previous_choice = previous_choice #2 * previous_choice - 1
     # Keep only rewards corresponding to valid trials
     valid_rewards = rewarded[valid_choices_idx]
 
@@ -416,6 +417,8 @@ def get_all_unnormalized_data_this_session(eid, df_trials, viol_val):
     unnormalized_design_matrix = create_design_matrix(choice, stim_left, stim_right, rewarded, viol_val)
     #y = np.expand_dims(remap_choice_vals(choice), axis=1)
     valid_choices, _ = get_valid_choice(choice, viol_val)
+    # remap choices to 1 and 0 to match bernoulli trials
+    valid_choices = valid_choices.replace({1: 1, -1: 0})
     y = np.expand_dims(valid_choices, axis=1)
     session = [eid for i in range(y.shape[0])]
     rewarded = np.expand_dims(rewarded, axis=1)
@@ -665,8 +668,7 @@ rate_per_stat = compute_rate_per_state(design_matrix, param, model.inverse_link_
 
 
 # %%
-rate_per_stat = compute_rate_per_state(design_matrix, model, model.inverse_link_function)
-
+#rate_per_stat = compute_rate_per_state(design_matrix, model, model.inverse_link_function)
 
 # %%
 class PARAMS:
