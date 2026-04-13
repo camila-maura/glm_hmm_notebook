@@ -301,6 +301,217 @@ normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 # and see our design matrix.
 
 # %%
+fig, axes = plt.subplots(1, 4, figsize=(14, 8), sharey=True)
+
+cols = ["Sign. contr.", "Prev. choice", "WSLS"]
+
+for i, col in enumerate(cols):
+    sns.heatmap(
+        normalized_inpt[:, [i]],
+        ax=axes[i],
+        cbar_kws={"label": "Value (cont. left - contr. right)","use_gridspec":"True"} if i == 0 else None,
+    )
+    axes[i].set_title(col)
+    axes[i].set_xticks([])
+    axes[i].set_yticks([1, 45, 90])
+    axes[i].set_yticklabels([1, 45, 90] if i == 0 else [])
+
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[3],
+
+    cbar=False,
+)
+
+axes[3].set_title("Choices")
+axes[3].set_xticks([])
+axes[3].set_yticks([])
+
+plt.tight_layout()
+plt.show()
+
+# %%
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.colors as mcolors
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
+fig, axes = plt.subplots(1, 4, figsize=(18
+                                        , 8), sharey=True)
+
+
+cols = ["Signed contrast", "Prev. choice", "WSLS"]
+
+# continuous normalization for col 0
+norm_cont = None  # let seaborn handle automatically
+
+# discrete normalization for cols 1 and 2
+cmap_bin = ListedColormap(["blue", "green"])
+norm_bin = BoundaryNorm([-2, 0,2], cmap_bin.N)
+
+for i, col in enumerate(cols):
+
+    is_continuous = (i == 0)
+
+    sns.heatmap(
+        normalized_inpt[:, [i]],
+        ax=axes[i],
+        cmap="viridis" if is_continuous else cmap_bin,
+        norm=norm_cont if is_continuous else norm_bin,
+        cbar=(i == 0),
+        cbar_kws={"label": "Value"} if i == 0 else None,
+    )
+
+    axes[i].set_title(col)
+    axes[i].set_xticks([])
+    axes[i].set_yticks([1, 45, 90])
+    axes[i].set_yticklabels([1, 45, 90] if i == 0 else [])
+
+# choices panel (also binary)
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[3],
+    cmap=cmap_bin,
+    norm=norm_bin,
+    cbar=True,
+    cbar_kws={"label": "Value"}#, "ticks": [-1, 1]},
+
+)
+
+axes[3].set_title("Choices")
+axes[3].set_xticks([])
+axes[3].set_yticks([])
+
+c_bar = axes[3].collections[0].colorbar
+c_bar.set_ticks([-1, 0, 1])
+c_bar.set_ticklabels(['-1: R', '', '+1 : L'])
+
+c_bar = axes[0].collections[0].colorbar
+c_bar.set_ticks([-2, -1, 0, 1, 2])
+c_bar.set_ticklabels(
+    ['-2: CL << CR ',
+     '-1: CL < CR', 
+     '0: CL == CR',
+     '+1 : CL > CR',
+     '+2 : CL >> CR',
+
+])
+
+plt.tight_layout()
+plt.show()
+
+# %%
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.colors as mcolors
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
+fig, axes = plt.subplots(1, 3, figsize=(18
+                                        , 8), sharey=True)
+
+cols = ["Signed contrast", "Prev. choice", "WSLS"]
+
+# continuous normalization for col 0
+norm_cont = None  # let seaborn handle automatically
+
+# discrete normalization for cols 1 and 2
+cmap_bin = ListedColormap(["blue", "green"])
+norm_bin = BoundaryNorm([-2, 0,2], cmap_bin.N)
+
+is_continuous = True
+sns.heatmap(
+    normalized_inpt[:, [0]],
+    ax=axes[0],
+    cmap="viridis" if is_continuous else cmap_bin,
+    norm=norm_cont if is_continuous else norm_bin,
+    cbar=True,
+    #cbar_kws={"label": "Value"}
+)
+axes[0].set_xticks([.5], ["Signed contrast"])
+
+axes[0].set_yticks([1, 45, 90])
+axes[0].set_yticklabels([1, 45, 90])
+
+c_bar = axes[0].collections[0].colorbar
+c_bar.set_ticks([-2, -1, 0, 1, 2])
+c_bar.set_ticklabels(
+    ['-2: CL << CR ',
+     '-1: CL < CR', 
+     '0: CL == CR',
+     '+1 : CL > CR',
+     '+2 : CL >> CR',
+
+])
+
+is_continuous = False
+sns.heatmap(
+    normalized_inpt[:, 1:3],
+    ax=axes[1],
+    cmap="viridis" if is_continuous else cmap_bin,
+    norm=norm_cont if is_continuous else norm_bin,
+    cbar=True,
+    #cbar_kws={"label": "Value"}
+)
+
+axes[1].set_xticks([.5,1.5], ["Prev choice", "WSLS"])
+c_bar = axes[1].collections[0].colorbar
+c_bar.set_ticks([-1, 0, 1])
+c_bar.set_ticklabels(['-1: R', '', '+1 : L'])
+
+
+# choices panel (also binary)
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[2],
+    cmap=cmap_bin,
+    norm=norm_bin,
+    cbar=True,
+    #cbar_kws={"label": "Value"}#, "ticks": [-1, 1]},
+
+)
+axes[2].set_title("Choices", fontsize=25)
+
+axes[2].set_xticks([])
+axes[2].set_yticks([])
+
+c_bar = axes[2].collections[0].colorbar
+c_bar.set_ticks([-1, 0, 1])
+c_bar.set_ticklabels(['-1: R', '', '+1 : L'])
+
+# --- title of design matrix
+pos0 = axes[0].get_position()
+pos1 = axes[1].get_position()
+
+x_mid = ((pos0.x0 + pos1.x1) / 2)-.05
+y_top = max(pos0.y1, pos1.y1) + .055
+
+
+fig.text(x_mid, y_top, "Design matrix", ha="center", va="bottom", fontsize=25)
+
+
+x_left = pos0.x0 - .115
+
+x_right = pos1.x1 + .02
+y = max(pos0.y1, pos1.y1) + 0.05
+h = 0.015  # bracket height
+
+# top horizontal line
+fig.lines.append(plt.Line2D([x_left, x_right], [y, y],
+                            transform=fig.transFigure, color="black"))
+
+# left vertical tick
+fig.lines.append(plt.Line2D([x_left, x_left], [y, y - h],
+                            transform=fig.transFigure, color="black"))
+
+# right vertical tick
+fig.lines.append(plt.Line2D([x_right, x_right], [y, y - h],
+                            transform=fig.transFigure, color="black"))
+
+
+plt.tight_layout()
+plt.show()
+
+# %%
 plt.figure(figsize=(6,8))
 plt.imshow(normalized_inpt, aspect="auto", cmap="coolwarm",)
 plt.colorbar(label="value")
@@ -582,7 +793,7 @@ print(f"intercept \n {model.intercept_}")
 # %% tags=["hide-input"]
 def plot_glm_weights(model):
     plt.figure(figsize=(6, 5))
-    colors = ["#ff7f00", "#4daf4a", "#377eb8"]
+    colors = ["#ff7f00",  "#4daf4a","#377eb8"]
 
     n_features = model.coef_.shape[0]+1 # add 1 for the intercept
     n_states = model.coef_.shape[1]
@@ -671,19 +882,26 @@ rate_per_stat = compute_rate_per_state(design_matrix, param, model.inverse_link_
 #rate_per_stat = compute_rate_per_state(design_matrix, model, model.inverse_link_function)
 
 # %%
+[max(stim_vals), 0, min(stim_vals)]
+
+
+# %% [markdown]
+# ![image.png](attachment:image.png)
+
+# %%
 class PARAMS:
     def __init__(self, coef, intercept):
         self.coef = coef
         self.intercept = intercept
 param = PARAMS(model.coef_, model.intercept_)
 
-def get_prob_right(model, inpt, k, pc, wsls):
+def get_prob_left(model, inpt, k, pc, wsls):
     # pending to make this more elegant with NeMoS
     # stim vector
     min_val_stim = np.min(inpt[:, 0])
     max_val_stim = np.max(inpt[:, 0])
     
-    stim_vals = np.arange(min_val_stim, max_val_stim, 0.05)
+    stim_vals = np.arange(max_val_stim, min_val_stim, -0.05)
     
     # create input matrix - cols are stim, pc, wsls, bias
     x = np.array([
@@ -694,65 +912,72 @@ def get_prob_right(model, inpt, k, pc, wsls):
     
     return stim_vals, compute_rate_per_state(x, param, model.inverse_link_function)[:,k] 
 
-stim_vals, prob_right_max  = get_prob_right(model, design_matrix, 0, 1, 1)
-_, prob_right_min  = get_prob_right(model, design_matrix, 0, -1, -1)
+#stim_vals, prob_left_max  = get_prob_left(model, design_matrix, 0, 1, 1)
+#_, prob_left_min  = get_prob_left(model, design_matrix, 0, -1, -1)
 
 cols = [
-        '#ff7f00', '#4daf4a', '#377eb8', '#f781bf', '#a65628', '#984ea3',
+       "#ff7f00", "#4daf4a", "#377eb8", '#f781bf', '#a65628', '#984ea3',
         '#999999', '#e41a1c', '#dede00'
 ]
 K = 3
+plt.figure(figsize=(8, 4)) 
 for k in range(K):
     plt.subplot(1, 3, k+1)
     # USE GLM WEIGHTS TO GET PROB RIGHT
-    stim_vals, prob_right_max = get_prob_right(model, design_matrix, k, 1, 1)
-    _, prob_right_min = get_prob_right(model, design_matrix, k, -1, -1)
-    
+    stim_vals, prob_left_max = get_prob_left(model, design_matrix, k, 1, 1)  # went L and was rewarded on previous trial
+    _, prob_left_min = get_prob_left(model, design_matrix, k, -1, -1) # went R and was rewarded on previous trial
+
     plt.plot(stim_vals,
-                prob_right_max,
+                1 - prob_left_min,
                 '-',
                 color=cols[k],
                 alpha=1,
                 lw=1,
                 zorder=5)  # went R and was rewarded on previous trial
-    
+
     plt.plot(stim_vals,
-                get_prob_right(model, design_matrix, k, -1, 1)[1],
+                1-get_prob_left(model, design_matrix, k, 1, -1)[1],
                 '--',
                 color=cols[k],
                 alpha=0.5,
                 lw=1)  # went L and was not rewarded on previous trial
+    
     plt.plot(stim_vals,
-                get_prob_right(model, design_matrix, k, 1, -1)[1],
+                1-get_prob_left(model, design_matrix, k, -1, 1)[1],
                 '-',
                 color=cols[k],
                 alpha=0.5,
                 lw=1,
                 markersize=3)  # went R and was not rewarded on previous trial
-    
-    plt.plot(stim_vals, prob_right_min, '--', color=cols[k], alpha=1,
+
+    plt.plot(stim_vals, 
+                1-prob_left_max, 
+                '--', 
+                color=cols[k], 
+                alpha=1,
                 lw=1)  # went L and was rewarded on previous trial
-    
+
     plt.xticks([min(stim_vals), 0, max(stim_vals)],
                 labels=['', '', ''],
                 fontsize=10)
-    
+
     plt.yticks([0, 0.5, 1], ['', '', ''], fontsize=10)
     plt.ylabel('')
     plt.xlabel('')
     if k == 0:
         plt.title("state 1 \n(\"engaged\")", fontsize=10, color=cols[k])
-        plt.xticks([min(stim_vals), 0, max(stim_vals)],
+        plt.xticks([max(stim_vals), 0, min(stim_vals)],
                     labels=['-100', '0', '100'],
                     fontsize=10)
         plt.yticks([0, 0.5, 1], ['0', '0.5', '1'], fontsize=10)
         plt.ylabel('p("R")', fontsize=10)
         plt.xlabel('stimulus', fontsize=10)
+
     if k == 1:
         plt.title("state 2 \n(\"biased left\")",
                     fontsize=10,
                     color=cols[k])
-        plt.xticks([min(stim_vals), 0, max(stim_vals)],
+        plt.xticks([max(stim_vals), 0, min(stim_vals)],
                     labels=['', '', ''],
                     fontsize=10)
         plt.yticks([0, 0.5, 1], ['', '', ''], fontsize=10)
@@ -760,7 +985,7 @@ for k in range(K):
         plt.title("state 3 \n(\"biased right\")",
                     fontsize=10,
                     color=cols[k])
-        plt.xticks([min(stim_vals), 0, max(stim_vals)],
+        plt.xticks([max(stim_vals), 0, min(stim_vals)],
                     labels=['', '', ''],
                     fontsize=10)
         plt.yticks([0, 0.5, 1], ['', '', ''], fontsize=10)
@@ -769,6 +994,8 @@ for k in range(K):
     plt.gca().spines['right'].set_visible(False)
     plt.gca().spines['top'].set_visible(False)
     plt.ylim((-0.01, 1.01))
+
+    plt.gca().invert_xaxis()
 plt.show()
 
 
@@ -791,7 +1018,7 @@ sess_ex_3 = np.where(session == sess_to_plot[2])
 sess_examples = [sess_ex_1, sess_ex_2, sess_ex_3]
 posteriors = model.smooth_proba(design_matrix, choices_tsd)
 
-colors =['#ff7f00', '#4daf4a', '#377eb8']
+colors =["#ff7f00", "#4daf4a", "#377eb8"]
 fig, ax = plt.subplots(1,3,figsize=(20, 4))
 for example_session in range(len(ax)):
     for state in range(3):
@@ -812,6 +1039,7 @@ for example_session in range(len(ax)):
                     "90"
                 ], 
             )
+            ax[example_session].set_ylabel("P(state)")
             ax[example_session].set_xlabel("Trial #")
             ax[example_session].set_yticks(
                 [0, 0.5, 1], 
@@ -843,7 +1071,7 @@ for example_session in range(len(ax)):
 
 # %%
 cols = [
-        '#ff7f00', '#4daf4a', '#377eb8', '#f781bf', '#a65628', '#984ea3',
+      "#ff7f00", "#4daf4a", "#377eb8", '#f781bf', '#a65628', '#984ea3',
         '#999999', '#e41a1c', '#dede00'
     ]
 
