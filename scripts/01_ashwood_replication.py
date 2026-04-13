@@ -15,16 +15,17 @@
 
 # %% [markdown]
 # # Inferring behavioral strategies during decision making using GLM-HMMs
-# One could think of Decision-making as a stable process: given the same stimulus, an animal is assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: How can we infer these latent behavioral strategies directly from observed choices?
+# One could think of decision-making as a stable process: given the same stimulus, an animal is assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: How can we infer these latent behavioral strategies directly from observed choices?
 #
 # In this notebook, we address this question using the GLM-HMM framework, which combines a generalized linear model (GLM) with a hidden Markov model (HMM) to capture both how decisions change as a function of stimuli and how strategies evolve over time. We will show how to use choice data to recover hidden behavioral states using the NeMoS implementation of a Bernoulli GLM-HMM, replicating the main findings of Ashwood et al. (2022)<span id="cite1b"></span><a href="#ref1">[PENDING]</a>.
 #
 # We have four main goals for this tutorial:
 #
-# 1. Explain how to preprocess real mice data from the [International Brain Laboratory (IBL) - PENDING]()
+# 1. Explain how to download and preprocess real mice data from the [International Brain Laboratory (IBL) - PENDING]()
 # 2. Show how to create a design matrix with different behavioral predictors
 # 3. Show how to fit choice data using a GLM-HMM
-# 4. Show how to interpret GLm-HMM fitting results
+# 4. Show how to interpret GLM-HMM fitting results
+# 5. Provide some ideas for follow-up analyses
 #
 #
 # Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs. If you need an explanation, please refer to our tutorials on GLMs and GLM-HMMs. Moreover, if you already have a good understanding of GLM-HMMs and are interested in different heuristics you could use to overcome difficulties in the fitting process, please refer to our tutorial for fine-grain details of the fitting algorithm and different initialization methods you could use to ensure the best possible fit and thus description of your data under this model.
@@ -73,6 +74,9 @@ import seaborn as sns
 from one.api import ONE
 from sklearn import preprocessing
 import matplotlib.pyplot as plt
+
+from scipy.special import expit
+from nemos.glm_hmm.utils import compute_rate_per_state
 
 # %% tags=["hide-input"]
 seed = 65  # Random seed for reproducibility
@@ -143,7 +147,7 @@ print(f"session \n(some) values: {trials.session.unique()[:5]}, data type: {tria
 
 # %%
 # Old: right == -1, left == 1, violation == 0
-# New: right == 1, left == 0, violation == -1
+# New: right == 1, left == 0, violati3on == -1
 trials.choice = trials.choice.replace({1: 0, -1: 1, 0: -1})
 
 # %% [markdown]
@@ -167,7 +171,7 @@ plt.show()
 # %% [markdown]
 # In  Ashwood et al. (2022)<span id="cite1b"></span><a href="#ref1">[PENDING]</a>, only the sessions with less than 10 violations were used. Thus, we will now revise the number of violations, defined as trials where the animal made no choice. i.e choice == 0 during the 50-50 trials. For this:
 #  1) We must subset sessions which include 50-50 trials and
-#  2) we must exclude sessions with >10 violation trials
+#  2) we must exclude sessions with >10 violation trials [change phrasing: we are following paper]
 
 # %%
 # Create a list of ids
@@ -244,61 +248,33 @@ print(signed_contrast)
 # Now we will create the next predictor: previous choice
 
 # %%
-remap = False
-if remap == True:
-    # Remap values to {1,0,-1}
-    # # raw choice vector has CW = 1 (correct response for stim on left),
-        # CCW = -1 (correct response for stim on right) and viol = 0.  Let's
-        # remap so that CW = 0, CCw = 1, and viol = -1
-    choice = choice.replace({1: 0, -1: 1, 0: -1})
-    # Get rid of violation trials i.e trials where the mouse didn't make a choice
-    # previous choice vector getting rid of violation trials
-    valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1
-    valid_choices = choice[valid_choices_idx]
-    # Shift the array elements one position to the right
-    previous_choice = np.roll(valid_choices, 1)
-    # Set first choice as first previous_choice
-    previous_choice[0] = valid_choices[0]
-    print(previous_choice)
-else:
-    # Get rid of violation trials i.e trials where the mouse didn't make a choice
-    # previous choice vector getting rid of violation trials
-    valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1 in the choice column
-    valid_choices = choice[valid_choices_idx]
-    # Shift the array elements one position to the right
-    previous_choice = np.roll(valid_choices, 1)
-    # Set first choice as first previous_choice
-    previous_choice[0] = valid_choices[0]
-    print(previous_choice)
+# Get rid of violation trials i.e trials where the mouse didn't make a choice
+# previous choice vector getting rid of violation trials
+
+# violation mask is going to change
+valid_choices_idx = np.where(~choice.isin([viol_val]))[0]      # violations are -1 in the choice column
+valid_choices = choice[valid_choices_idx]
+# Shift the array elements one position to the right
+previous_choice = np.roll(valid_choices, 1)
+# Set first choice as first previous_choice
+previous_choice[0] = valid_choices[0]
+print(previous_choice)
 
 # %% [markdown]
 # Now we will compute the final predictor: win-stay lose-shift
 # %%
-if remap == True:
-    # remap previous choice vals to {-1, 1}
-    remapped_previous_choice = 2 * previous_choice - 1
-    # Keep only rewards corresponding to valid trials
-    valid_rewards = rewarded[valid_choices_idx]
-    # Shift the array elements one position to the right
-    previous_reward = np.roll(valid_rewards, 1)
-    # Set first choice as first previous_choice
-    previous_reward[0] = valid_rewards[0]
-    # wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
-    wsls = previous_reward * remapped_previous_choice
-    print(wsls)
-
-else:
-    # remap previous choice vals to {-1, 1} to match 1 <- rightward evidence and -1 <- leftward evidence
-    remapped_previous_choice = 2 * previous_choice - 1
-    # Keep only rewards corresponding to valid trials
-    valid_rewards = rewarded[valid_choices_idx]
-    # Shift the array elements one position to the right
-    previous_reward = np.roll(valid_rewards, 1)
-    # Set first choice as first previous_choice
-    previous_reward[0] = valid_rewards[0]
-    # wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
-    wsls = previous_reward * remapped_previous_choice
-    print(wsls)
+# choice change of mapping will also change this probably
+# remap previous choice vals to {-1, 1} to match 1 -> rightward evidence and -1 -> leftward evidence
+remapped_previous_choice = 2 * previous_choice - 1
+# Keep only rewards corresponding to valid trials
+valid_rewards = rewarded[valid_choices_idx]
+# Shift the array elements one position to the right
+previous_reward = np.roll(valid_rewards, 1)
+# Set first choice as first previous_choice
+previous_reward[0] = valid_rewards[0]
+# wsls: vector of size T, entries are in {-1, 1}.  1 corresponds to previous choice = right and success OR previous choice = left and failure; -1 corresponds to previous choice = left and success OR previous choice = right and failure
+wsls = previous_reward * remapped_previous_choice
+print(wsls)
 
 # %% [markdown]
 # Now can create our design matrix and fill it with the three vectors: stimuli, previous choice and wsls.
@@ -311,7 +287,7 @@ n_trials = len(signed_contrast)
 design_mat = np.zeros((n_trials, 3))
 # Add signed_contrast in the first predictor in the design matrix
 design_mat[:, 0] = signed_contrast
-# remap previous choice vals to {-1, 1} to match 1 <- rightward evidence and -1 <- leftward evidence
+# remap previous choice vals to {-1, 1} to match 1 -> rightward evidence and -1 -> leftward evidence
 design_mat[:, 1] = 2 * previous_choice - 1
 # Add wsls as third predictor in the design matrix
 design_mat[:, 2] = wsls
@@ -325,17 +301,11 @@ normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 # and see our design matrix.
 
 # %%
-X = normalized_inpt.copy()
-
 plt.figure(figsize=(6,8))
-
-plt.imshow(X, aspect="auto", cmap="coolwarm",)
-
+plt.imshow(normalized_inpt, aspect="auto", cmap="coolwarm",)
 plt.colorbar(label="value")
-
 plt.xticks([0,1,2], ["Sign contr", "Prev choice", "WSLS"])
 plt.yticks([])
-
 plt.xlabel("Predictors")
 plt.ylabel("Trials")
 plt.title("Design matrix")
@@ -355,11 +325,11 @@ def get_data_this_session(eid, df_trials):
     choice = df_sess['choice'].reset_index(drop=True)
     return choice, stim_left, stim_right, rewarded
 
-def get_valid_choice(choice):
+def get_valid_choice(choice, viol_val):
     # takes in remapped choices
     # Get rid of violation trials i.e trials where the mouse didn't make a choice
     # previous choice vector getting rid of violation trials
-    valid_choices_idx = np.where(~choice.isin([-1]))[0]      # violations are -1
+    valid_choices_idx = np.where(~choice.isin([viol_val]))[0]
     valid_choices = choice[valid_choices_idx]
     return valid_choices, valid_choices_idx
     
@@ -416,19 +386,20 @@ def remap_choice_vals(choice):
     new_choice = choice.replace({1: 0, -1: 1, 0: -1})
     return new_choice
 
-def create_design_matrix(choice, stim_left, stim_right, rewarded):
-    # Stimuli predictor
+def create_design_matrix(choice, stim_left, stim_right, rewarded, viol_val):
+    # Stimuli predictor before filtering for valid trials
     signed_contrast = create_stim_vector(stim_left, stim_right)
 
     # make choice vector so that correct response for stim>0 is choice =1
     # and is 0 for stim <0 (viol is mapped to -1)
     #choice = remap_choice_vals(choice)
-    valid_choices, valid_choices_idx = get_valid_choice(choice)
+    valid_choices, valid_choices_idx = get_valid_choice(choice, viol_val)
     previous_choice = create_previous_choice_vector(valid_choices)
 
     # create wsls vector:
     wsls = create_wsls_covariate(previous_choice, rewarded, valid_choices_idx)
     
+    # filter for valid trials
     signed_contrast =  signed_contrast[valid_choices_idx]
     
     n_trials = len(signed_contrast)
@@ -440,22 +411,22 @@ def create_design_matrix(choice, stim_left, stim_right, rewarded):
     design_mat[:, 2] = wsls
     return design_mat
 
-def get_all_unnormalized_data_this_session(eid, df_trials):
+def get_all_unnormalized_data_this_session(eid, df_trials, viol_val):
     choice, stim_left, stim_right, rewarded = get_data_this_session(eid, df_trials)
-    unnormalized_design_matrix = create_design_matrix(choice, stim_left, stim_right, rewarded)
+    unnormalized_design_matrix = create_design_matrix(choice, stim_left, stim_right, rewarded, viol_val)
     #y = np.expand_dims(remap_choice_vals(choice), axis=1)
-    valid_choices, _ = get_valid_choice(choice)
+    valid_choices, _ = get_valid_choice(choice, viol_val)
     y = np.expand_dims(valid_choices, axis=1)
     session = [eid for i in range(y.shape[0])]
     rewarded = np.expand_dims(rewarded, axis=1)
     return unnormalized_design_matrix, y, session, rewarded
 
-def get_unnormalized_design_mat(valid_sessions, df_trials):
+def get_unnormalized_design_mat(valid_sessions, df_trials, viol_val):
     sess_counter = 0
     for eid in valid_sessions:
         unnormalized_inpt, y, session, rewarded = \
             get_all_unnormalized_data_this_session(
-                eid, df_trials)
+                eid, df_trials, viol_val)
         if sess_counter == 0:
             animal_unnormalized_inpt = np.copy(unnormalized_inpt)
             animal_y = np.copy(y)
@@ -475,7 +446,7 @@ def get_unnormalized_design_mat(valid_sessions, df_trials):
     return animal_unnormalized_inpt, animal_normalized_inpt, animal_y.flatten(), animal_session
 
 # %%
-unnormalized_inpt, design_matrix, choices_mouse, session = get_unnormalized_design_mat(valid_sessions, df_trials)
+unnormalized_inpt, design_matrix, choices_mouse, session = get_unnormalized_design_mat(valid_sessions, df_trials, viol_val)
 
 # %% [markdown]
 # Importantly, do not do 3000 trials at once! Instead, they generally do several sessions of 100-300 trials, and we use all the sessions together to fit our model. For our model to be accurate, we need to tell it when our session boundaries are: we don't want it to compute all sessions as if they were one. 
@@ -512,9 +483,9 @@ print(f"time support\n {choices_tsd.time_support}")
 
 # %% [markdown]
 # ## 03. Fitting a GLM-HMM with NeMoS (Maximum Likelihood)
-# As mentioned above, we will use a Bernoulli GLM to model this mouse's choices. For this, we first you need to initialize the ```GLMHMM``` object. The only mandatory thing you have to declare is the number of states. In Ashwood et al. (2022) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, they found that most mice used 3 decision-making states when performing the task. Thus, in our case, we will initialize the ```GLMHMM``` object with 3 states. 
+# As mentioned above, we will use a Bernoulli GLM to model this mouse's choices. For this, we first need to initialize the ```GLMHMM``` object. The only mandatory thing to have to declare is the number of states. In Ashwood et al. (2022) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, they found that most mice used 3 decision-making states when performing the task. Thus, in our case, we will initialize the ```GLMHMM``` object with 3 states. 
 #
-# ! admonition The default observation model for the GLM-HMM is this model is Bernoulli, but we also have Categorical (Multinomial), Poisson, Gamma, Negative Binomial and Gaussian available. Moreover, if desired, you can also set a different observation model of your choice. You can also personalize the inverse link function. Convexity non guaranteed for all likelihood functions, refer to Escola paper and also to the other notebook.
+# ! admonition The default observation model for the GLM-HMM is this model is Bernoulli, but we also have Categorical (Multinomial), Poisson, Gamma, Negative Binomial and Gaussian available. Moreover, if desired, you can also set a different observation model of your choice. You can also personalize the inverse link function. Convexity non guaranteed for all likelihood functions, refer to Escola et al (2011)<span id="cite1b"></span><a href="#ref1">[PENDING]</a> and also to [the other notebook - PENDING]()
 
 # %% [markdown]
 # DONT EDIT, MIGHT CHANGE :)
@@ -526,9 +497,11 @@ print(f"time support\n {choices_tsd.time_support}")
 # - ``"initial_proba_init"``: ``"uniform"`` - equal probability for all states
 # - ``"transition_proba_init"``: ``"sticky"`` - high self-transition probability (0.95)
 #
-# Right now we will not use NeMoS defaults. Instead, we will use a special set of initial values, the same as in Ashwood et al. (2022) <span id="cite1b"></span><a href="#ref1">[PENDING]</a>, to replicate their results.
+# Right now we will use NeMoS defaults.
 #
 # ! admonition importance of choice of initial parameters in the context of GLM HMMs, link to other notebook
+#
+# - Add k means init as another option
 
 # %%
 n_states = 3
@@ -540,7 +513,10 @@ model = nmo.glm_hmm.GLMHMM(
 print(model)
 
 # %% [markdown]
-# Once we created our object, we can fit our model. The fit function takes two mandatory arguments: the design matrix which we discussed above and the ```choices_tsd```.
+# add admonition on regularization
+
+# %% [markdown]
+# Once we created our object, we can fit our model. The fit function takes two mandatory arguments: the design matrix we created in the previous step and the ```choices_tsd```.
 
 # %% [markdown]
 # ! admonition on how to choose a good initialization of parameters
@@ -548,13 +524,13 @@ print(model)
 
 # %%
 # indices where a new session starts
-#new_sess_idx = np.where(new_sess_mouse == 1)[0][1:] # skip first
+new_sess_idx = np.where(new_sess_mouse == 1)[0][1:] # skip first
 
 # insert NaNs before each new session start
-#choices_with_nan = np.insert(choices_mouse.astype(float), new_sess_idx, np.nan)
+choices_with_nan = np.insert(choices_mouse.astype(float), new_sess_idx, np.nan)
 
 # insert rows of NaNs at session boundaries
-#design_mat_with_nan = np.insert(design_matrix, new_sess_idx, np.nan, axis=0)
+design_mat_with_nan = np.insert(design_matrix, new_sess_idx, np.nan, axis=0)
 
 # NaNs in choices
 #model.fit(design_matrix, choices_with_nan)
@@ -577,33 +553,31 @@ model.transition_prob_ = model.transition_prob_[permutation][:, permutation]
 # If we want to see our glm-hmm parameters, we can call ```model.coef_```. This will output the coefficients of the glm per state, with shape (n_features, n_states)
 
 # %%
-model.coef_.shape
-
-# %%
-model.coef_ 
+print(f"shape \n {model.coef_.shape} \n")
+print(f"coefficients \n {model.coef_}")
 
 # %% [markdown]
 # Similarly, to see the intercept, we can call ```model.intercept_```, which will output the intercept per state. The shape of this object is (n_states)
 
 # %%
-model.intercept_
+print(f"shape \n {model.intercept_.shape} \n")
+print(f"intercept \n {model.intercept_}")
 
+
+# %% [markdown]
+# and thats all it takes!
 
 # %% [markdown]
 # ## 04. Interpreting the fitting results
 
 # %% [markdown]
-# ### Plot 2e: glm weights
-
-# %% [markdown]
-# Ashwood: Inferred GLM weights for the three-state model. State 1 weights have a large weight on the stimulus, indicating an ‘engaged’ or high-accuracy state. In states 2 and 3, the stimulus weight is small, and the bias weights give rise to large leftward (state 2) and rightward (state 3) biases.
+# ### 04.1 Interpreting the GLM weights
+# First, we can plot the GLM weights obtained for our 3-state model. We can see that the coefficients on state 1 have a large weight on the stimulus and low weight on the other predictors. Conversely, in states 2 and 3, the stimulus coefficient is low. State 2 has a large positive weight on bias, while State 3 has a large negative weight on bias. Since the sign of our predictors indicates the side of evidence and their magnitude indicates the strength of such evidence, State 2 coefficients suggest a large bias on to a rightward choice, while State 2 coefficients suggest a large bias to a leftward choice. All states have similarly low coefficients for prev. choice and wsls, with State 1 showing the smallest of them. 
 #
-# GLM weights, which define how the animal makes decisions in each state (Fig. 2e). One of these GLMs (‘state 1’) had a large weight on the stimulus and negligible weights on other inputs, giving rise to high-accuracy performance on the task (Fig. 2f). The other two GLMs (‘state 2’ and ‘state 3’), by comparison, had smaller weights on the stimulus and relatively large bias weights
+# As a reminder, the task consisted on indicating whether the stimulus was located at the right or the left of the screen using the stimulus contrast information. Thus, the optimal strategy is to maximally use stimulus contrast to guide decision making, and not rely on bias, previous choice or wsls.
 
-# %% slideshow={"slide_type": "slide"}
-def plot_glm_weights(
-    model
-):
+# %% tags=["hide-input"]
+def plot_glm_weights(model):
     plt.figure(figsize=(6, 5))
     colors = ["#ff7f00", "#4daf4a", "#377eb8"]
 
@@ -639,18 +613,19 @@ def plot_glm_weights(
     plt.tight_layout()
     plt.show()
     return None
-
+# %%
 plot_glm_weights(model)
 
 # %% [markdown]
-# ### Plot 2d: transition matrix
+# ### 04.2 Interpreting the transition matrix
+# Mention usually is good to have sticky matrices. 
+#
 # Ashwood: The transition matrix for the fitted three-state model describes the transition probabilities among three different states, each of which corresponds to a different decision-making strategy (Fig. 2d). Large entries along the diagonal of this matrix, ranging between 0.94 and 0.98, indicate a high probability of remaining in the same state for multiple trials.
 
 # %%
-n_decimals = 2
+n_decimals = 3
 
 fig = plt.figure(figsize=(8, 3))
-
 plt.imshow(model.transition_prob_, vmin=-0.8, vmax=1, cmap='bone')
 
 for i in range(model.transition_prob_.shape[0]):
@@ -667,8 +642,9 @@ plt.title("Transition matrix")
 
 plt.subplots_adjust(0, 0, 1, 1)
 
+
 # %% [markdown]
-# ### Plot 2g: Psychometric curves
+# ### 04.3 Interpreting how different GLM weight combinations produce different behaviors: building a psychometric curve using ```compute_rate_per_state```
 # To understand how different states "affect" (change wording) choice behavior, we can use a psychometric curve.
 #
 # Ashwood: 
@@ -677,9 +653,22 @@ plt.subplots_adjust(0, 0, 1, 1)
 # Using the fit GLM-HMM parameters for this animal and the true sequence of stimuli presented to the mouse, we generated a time series with the same number of trials as those that the example mouse had in its dataset. At each trial, regardless of the true stimulus presented, we calculated pt(“R”) for each of the nine possible stimuli by averaging the per-state psychometric curves of g and weighting by the appropriate row in the transition matrix (depending on the sampled latent state at the previous trial). Finally, we averaged the per-trial psychometric curves across all trials to obtain the curve that is shown in black, whereas the empirical choice data of the mouse are shown in red, as are 95% confidence intervals (n between 530 and 601, depending on stimulus value). acc., accuracy.
 
 # %%
-from scipy.special import expit
-from nemos.glm_hmm.utils import compute_rate_per_state
+class PARAMS:
+    def __init__(self, coef, intercept):
+        self.coef = coef
+        self.intercept = intercept
+param = PARAMS(model.coef_, model.intercept_)
+#compute_rate_per_state(design_matrix, model, model.inverse_link_function)
+rate_per_stat = compute_rate_per_state(design_matrix, param, model.inverse_link_function)
 
+# Error : 'GLMHMM' object has no attribute 'coef' || should be coef_?
+
+
+# %%
+rate_per_stat = compute_rate_per_state(design_matrix, model, model.inverse_link_function)
+
+
+# %%
 class PARAMS:
     def __init__(self, coef, intercept):
         self.coef = coef
@@ -782,7 +771,7 @@ plt.show()
 
 
 # %% [markdown]
-# ### 3a. Posterior state probabilities
+# ### 04.4 Using ```smooth_proba``` to see and interpret posterior state probabilities
 # We can also show the posterior state probabilities.
 #
 # Ashwood: Posterior state probabilities for three example sessions, revealing high levels of certainty about the mouse’s internal state and showing that states typically persisted for many trials in a row.
@@ -845,7 +834,7 @@ for example_session in range(len(ax)):
             )
 
 # %% [markdown]
-# ### Plot 2f: accuracy per state
+# ### 04.5 Using ```decode_state``` to compute fraction of occupancy and accuracy per state
 # Ashwood: Overall accuracy of this mouse (gray) and accuracy for each of the three states. g, Psychometric curve for each state, conditioned on previous reward and previous choice.
 #
 # Although this mouse had an overall accuracy of 80%, it achieved 90% accuracy in the engaged state compared to only 60% and 58% accuracy in the two biased states (Fig. 2f).
@@ -936,18 +925,22 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ## should add fraction of occupancy and fraction of session with number of state changes
+# should add fraction of occupancy and fraction of session with number of state changes
+#
 # Ashwood: Moreover, the mouse changed state at least once within a session in roughly 71% of all 90-trial sessions and changed multiple times in 59% of sessions (Fig. 3e). This rules out the possibility that the states merely reflect the use of different strategies on different days. Rather, the mouse tended to remain in an engaged, high-performance state for tens of trials at a time, with lapses arising predominantly during interludes when it adopted a left-biased or right-biased strategy for multiple trials in a row. The multi-state GLM-HMM thus provides a very different portrait of mouse decision-making behavior than the basic GLM or lapse model.
 
 # %% [markdown]
-# ## Conclusion
+# ## 05. Conclusions and next steps
 # conclusionary conclusion la conclusión que concluyo c'est fini
 #
 # follow state descriptions in the paper
 # if you dont segment the paper then you would not be able to see some effects (see in what way they do that) -> explain at the very begining as a motivation and in the end as an interpretation -> why they thought to use this method
+#
+# - show the class or link to the class name and show all code again. Creatte design matrix and fit the model. Emphasize. This is brief and its quick. 
+#
 
 # %% [markdown]
-# ## Other resources
+# ## Additional resources
 # - ssm tutorial: https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb
 
 # %% [markdown]
