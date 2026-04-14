@@ -67,13 +67,13 @@ from nemos.glm_hmm import GLMHMM
 nmo.GLMHMM = GLMHMM # this is the only way I got the GLM HMM module to work when using my own installation...I don't really know why but it won't be a problem when we release anyway
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 import pynapple as nap
 import seaborn as sns
 from one.api import ONE
 from sklearn import preprocessing
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm, LinearSegmentedColormap
 
 from scipy.special import expit
 from nemos.glm_hmm.utils import compute_rate_per_state
@@ -301,42 +301,251 @@ normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 # and see our design matrix.
 
 # %%
-fig, axes = plt.subplots(1, 4, figsize=(14, 8), sharey=True)
+fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharey=True)
 
-cols = ["Sign. contr.", "Prev. choice", "WSLS"]
+# ---- define signed contrast bins ----
+signed_levels = np.array([
+    -1.0, -0.25, -0.125, -0.0625, 0.0,
+     0.0625, 0.125, 0.25, 1.0
+])
+signed_levels_ticks = signed_levels+.5
 
-for i, col in enumerate(cols):
-    sns.heatmap(
-        normalized_inpt[:, [i]],
-        ax=axes[i],
-        cbar_kws={"label": "Value (cont. left - contr. right)","use_gridspec":"True"} if i == 0 else None,
-    )
-    axes[i].set_title(col)
-    axes[i].set_xticks([])
-    axes[i].set_yticks([1, 45, 90])
-    axes[i].set_yticklabels([1, 45, 90] if i == 0 else [])
+all_levels = signed_levels
+all_levels = np.unique(all_levels)
+all_levels.sort()
 
+cmap_cat = ListedColormap(plt.cm.viridis(np.linspace(0, 1, len(all_levels)+1)))
+cmap_cat = LinearSegmentedColormap.from_list(
+    "bias_map",
+    ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
+)
+bounds = np.concatenate([
+    all_levels - 1e-6,
+    [all_levels[-1] + 1]
+])
+
+#bounds = all_levels
+
+norm = BoundaryNorm(bounds, cmap_cat.N)
+
+# ---- heatmap 1: full design matrix ----
 sns.heatmap(
-    valid_choices.to_numpy().reshape(-1, 1),
-    ax=axes[3],
-
-    cbar=False,
+    unnormalized_inpt,
+    ax=axes[0],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=False
 )
 
-axes[3].set_title("Choices")
-axes[3].set_xticks([])
-axes[3].set_yticks([])
+axes[0].set_xticks([0.5, 1.5, 2.5],
+                   ["Sign. contr. \n(unnormalized)", "Prev choice", "WSLS"])
+axes[0].set_yticks([])
+axes[0].set_xlabel("Predictors")
+axes[0].set_ylabel("Trials")
+axes[0].set_title("Design matrix")
+
+# ---- heatmap 2: choices ----
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[1],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=True
+)
+axes[0].set_yticks([])
+axes[1].set_xticks([0.5], ["Choices"])
+
+cbar = axes[1].collections[0].colorbar
+
+midpoints = (bounds[:-1] + bounds[1:]) / 2
+cbar.ax.minorticks_off()
+cbar.set_ticks(midpoints)
+cbar.set_ticklabels([str(v) for v in signed_levels])
 
 plt.tight_layout()
 plt.show()
 
-# %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib.colors as mcolors
-from matplotlib.colors import ListedColormap, BoundaryNorm
 
-fig, axes = plt.subplots(1, 4, figsize=(18
+# %%
+
+print("ALTERNATIVE 1 \n")
+fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharey=True)
+
+# ---- define signed contrast bins ----
+signed_levels = np.array([
+    -1.0, -0.25, -0.125, -0.0625, 0.0,
+     0.0625, 0.125, 0.25, 1.0
+])
+signed_levels_ticks = signed_levels+.5
+
+all_levels = signed_levels
+all_levels = np.unique(all_levels)
+all_levels.sort()
+
+cmap_cat = ListedColormap(plt.cm.viridis(np.linspace(0, 1, len(all_levels)+1)))
+cmap_cat = LinearSegmentedColormap.from_list(
+    "bias_map",
+    ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
+)
+bounds = np.concatenate([
+    all_levels - 1e-6,
+    [all_levels[-1] + 1]
+])
+
+#bounds = all_levels
+
+norm = BoundaryNorm(bounds, cmap_cat.N)
+
+# ---- heatmap 1: full design matrix ----
+sns.heatmap(
+    unnormalized_inpt,
+    ax=axes[0],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=False
+)
+
+axes[0].set_xticks([0.5, 1.5, 2.5],
+                   ["Sign. contr. \n(unnormalized)", "Prev choice", "WSLS"])
+axes[0].set_yticks([])
+axes[0].set_xlabel("Predictors")
+axes[0].set_ylabel("Trials")
+axes[0].set_title("Design matrix")
+
+# ---- heatmap 2: choices ----
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[1],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=True
+)
+axes[0].set_yticks([])
+axes[1].set_xticks([0.5], ["Choices"])
+
+cbar = axes[1].collections[0].colorbar
+
+midpoints = (bounds[:-1] + bounds[1:]) / 2
+cbar.ax.minorticks_off()
+cbar.set_ticks(midpoints)
+cbar.set_ticklabels([str(v) for v in signed_levels])
+
+plt.tight_layout()
+plt.show()
+
+print("ALTERNATIVE 2 \n")
+fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharey=True)
+
+# ---- define signed contrast bins (unnormalized) ----
+signed_levels = np.array([
+    -2.424443102018604,
+    -1.0,
+    -0.6694842882249763,
+    -0.3769911525927051,
+    -0.2307445847765695,
+    -0.0844980169604339,
+     0.06174855085570171,
+     0.20799511867183731,
+     0.5004882543041086,
+     1.0,
+     2.255447068097736,
+])
+
+all_levels = np.unique(signed_levels)
+all_levels.sort()
+
+cmap_cat = LinearSegmentedColormap.from_list(
+    "bias_map",
+    ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
+)
+
+bounds = np.concatenate([
+    all_levels - 1e-6,
+    [all_levels[-1] + 1]
+])
+
+norm = BoundaryNorm(bounds, cmap_cat.N)
+
+# ---- heatmap 1: full design matrix ----
+sns.heatmap(
+    normalized_inpt,
+    ax=axes[0],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=False
+)
+
+axes[0].set_xticks([0.5, 1.5, 2.5],
+                   ["Sign. contr. \n(unnormalized)", "Prev choice", "WSLS"])
+axes[0].set_yticks([])
+axes[0].set_xlabel("Predictors")
+axes[0].set_ylabel("Trials")
+axes[0].set_title("Design matrix")
+
+# ---- heatmap 2: choices ----
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[1],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=True
+)
+axes[0].set_yticks([])
+axes[1].set_xticks([0.5], ["Choices"])
+
+cbar = axes[1].collections[0].colorbar
+
+midpoints = (bounds[:-1] + bounds[1:]) / 2
+cbar.ax.minorticks_off()
+cbar.set_ticks(midpoints)
+cbar.set_ticklabels([f"{v:.4g}" for v in signed_levels])
+
+plt.tight_layout()
+plt.show()
+print("ALTERNATIVE 3 \n")
+fig, axes = plt.subplots(1, 2, figsize=(10
+                                        , 8), sharey=True)
+cmap_cat = ListedColormap(["#377eb8",  "#4daf4a"])
+bounds = [-1,0,1]
+norm = BoundaryNorm(bounds, cmap_cat.N)
+
+sns.heatmap(
+    unnormalized_inpt,
+    ax=axes[0],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=False,
+)
+
+# choices panel (also binary)
+sns.heatmap(
+    valid_choices.to_numpy().reshape(-1, 1),
+    ax=axes[1],
+    cmap=cmap_cat,
+    norm=norm,
+    cbar=True,
+    #cbar_kws={"label": "Value"}#, "ticks": [-1, 1]},
+
+)
+axes[1].set_xlabel("")
+axes[1].set_xticks([.5], ["Choices"])
+
+c_bar = axes[1].collections[0].colorbar
+c_bar.set_ticks([-.5, 0, .5])
+c_bar.set_ticklabels(['-1: R', '', '+1 : L'])
+
+axes[0].set_xticks([0.5,1.5,2.5], ["Sign. contr. \n(unnormalized)", "Prev choice", "WSLS"])
+axes[0].set_yticks([])
+axes[0].set_xlabel("Predictors")
+axes[0].set_ylabel("Trials")
+axes[0].set_title("Design matrix")
+
+plt.tight_layout()
+plt.show()
+
+print("ALTERNATIVE 4 \n")
+
+fig, axes = plt.subplots(1, 3, figsize=(18
                                         , 8), sharey=True)
 
 
@@ -358,8 +567,8 @@ for i, col in enumerate(cols):
         ax=axes[i],
         cmap="viridis" if is_continuous else cmap_bin,
         norm=norm_cont if is_continuous else norm_bin,
-        cbar=(i == 0),
-        cbar_kws={"label": "Value"} if i == 0 else None,
+        cbar=((i == 0) or (i==2)),
+       
     )
 
     axes[i].set_title(col)
@@ -368,6 +577,7 @@ for i, col in enumerate(cols):
     axes[i].set_yticklabels([1, 45, 90] if i == 0 else [])
 
 # choices panel (also binary)
+'''
 sns.heatmap(
     valid_choices.to_numpy().reshape(-1, 1),
     ax=axes[3],
@@ -381,8 +591,8 @@ sns.heatmap(
 axes[3].set_title("Choices")
 axes[3].set_xticks([])
 axes[3].set_yticks([])
-
-c_bar = axes[3].collections[0].colorbar
+'''
+c_bar = axes[2].collections[0].colorbar
 c_bar.set_ticks([-1, 0, 1])
 c_bar.set_ticklabels(['-1: R', '', '+1 : L'])
 
@@ -397,19 +607,27 @@ c_bar.set_ticklabels(
 
 ])
 
+
+pos0 = axes[0].get_position()
+pos1 = axes[2].get_position()
+
+x_mid = ((pos0.x0 + pos1.x1) / 2) -.005
+y_top = max(pos0.y1, pos1.y1) + .1
+
+
+fig.text(x_mid, y_top, "Design matrix", ha="center", va="bottom", fontsize=25)
+axes[0].set_ylabel("Trials")
+
+
 plt.tight_layout()
 plt.show()
 
-# %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib.colors as mcolors
-from matplotlib.colors import ListedColormap, BoundaryNorm
+print("ALTERNATIVE 5 \n")
 
 fig, axes = plt.subplots(1, 3, figsize=(18
                                         , 8), sharey=True)
 
-cols = ["Signed contrast", "Prev. choice", "WSLS"]
+cols = ["Sign. contr. (z-scored)", "Prev. choice", "WSLS"]
 
 # continuous normalization for col 0
 norm_cont = None  # let seaborn handle automatically
@@ -420,26 +638,24 @@ norm_bin = BoundaryNorm([-2, 0,2], cmap_bin.N)
 
 is_continuous = True
 sns.heatmap(
-    normalized_inpt[:, [0]],
+    unnormalized_inpt[:, [0]],
     ax=axes[0],
     cmap="viridis" if is_continuous else cmap_bin,
     norm=norm_cont if is_continuous else norm_bin,
     cbar=True,
     #cbar_kws={"label": "Value"}
 )
-axes[0].set_xticks([.5], ["Signed contrast"])
+axes[0].set_xticks([.5], ["Sign. contr. \n(unnormalized)"])
 
 axes[0].set_yticks([1, 45, 90])
 axes[0].set_yticklabels([1, 45, 90])
 
 c_bar = axes[0].collections[0].colorbar
-c_bar.set_ticks([-2, -1, 0, 1, 2])
+c_bar.set_ticks([-.95, 0, .95])
 c_bar.set_ticklabels(
-    ['-2: CL << CR ',
-     '-1: CL < CR', 
+    ['-1: CL << CR ',
      '0: CL == CR',
-     '+1 : CL > CR',
-     '+2 : CL >> CR',
+     '+1 : CL >> CR',
 
 ])
 
@@ -507,19 +723,6 @@ fig.lines.append(plt.Line2D([x_left, x_left], [y, y - h],
 fig.lines.append(plt.Line2D([x_right, x_right], [y, y - h],
                             transform=fig.transFigure, color="black"))
 
-
-plt.tight_layout()
-plt.show()
-
-# %%
-plt.figure(figsize=(6,8))
-plt.imshow(normalized_inpt, aspect="auto", cmap="coolwarm",)
-plt.colorbar(label="value")
-plt.xticks([0,1,2], ["Sign contr", "Prev choice", "WSLS"])
-plt.yticks([])
-plt.xlabel("Predictors")
-plt.ylabel("Trials")
-plt.title("Design matrix")
 
 plt.tight_layout()
 plt.show()
