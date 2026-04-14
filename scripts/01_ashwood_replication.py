@@ -143,14 +143,6 @@ print(f"probability of stimulus on left \nvalues: {trials.probabilityLeft.unique
 
 print(f"session \n(some) values: {trials.session.unique()[:5]}, data type: {trials.session.dtype}\n")
 # %% [markdown]
-# Since we have constructed our model as a Bernoulli with $y_t = 1$ corresponding to rightward choice, we will remap our choices now to match that. 
-
-# %%
-# Old: right == -1, left == 1, violation == 0
-# New: right == 1, left == 0, violati3on == -1
-#trials.choice = trials.choice.replace({1: 0, -1: 1, 0: -1})
-
-# %% [markdown]
 # Now, we will restrict the analysis to the first 90 trials of each session. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5). In this regime, choices are driven primarily by sensory evidence rather than learned expectations about stimulus probability. After trial 90, the task switches to a block structure in which the left stimulus occurs with probability 0.8 or 0.2, alternating across blocks within the session.
 
 # %%
@@ -219,6 +211,11 @@ print(f"# of sessions after restrictions {len(df_trials.session.unique())}")
 #
 # Let's go through the process of building the design matrix with one session.
 
+# %% [markdown]
+# ::: admonition on WSLS
+# <center><img src="images/wsls.png" alt="Task schematic" width="600" /></center>
+#
+
 # %%
 # Select an example session
 eid = valid_sessions[0]  
@@ -243,6 +240,17 @@ stim_right = np.nan_to_num(stim_right, nan=0)
 # now get 1D stim
 signed_contrast = stim_left - stim_right
 print(signed_contrast)
+
+# %%
+# nemos version
+bas = nmo.basis.HistoryConv(1)
+#choice, reward = np.random.choice([-1, 1], size=(2,10))
+identity = nmo.basis.IdentityEval()
+
+
+X = (identity + bas + bas*bas).compute_features(signed_contrast, choice, choice, rewarded)
+
+X
 
 # %% [markdown]
 # Now we will create the next predictor: previous choice
@@ -299,72 +307,6 @@ normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
 
 # %% [markdown]
 # and see our design matrix.
-
-# %%
-fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharey=True)
-
-# ---- define signed contrast bins ----
-signed_levels = np.array([
-    -1.0, -0.25, -0.125, -0.0625, 0.0,
-     0.0625, 0.125, 0.25, 1.0
-])
-signed_levels_ticks = signed_levels+.5
-
-all_levels = signed_levels
-all_levels = np.unique(all_levels)
-all_levels.sort()
-
-cmap_cat = ListedColormap(plt.cm.viridis(np.linspace(0, 1, len(all_levels)+1)))
-cmap_cat = LinearSegmentedColormap.from_list(
-    "bias_map",
-    ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
-)
-bounds = np.concatenate([
-    all_levels - 1e-6,
-    [all_levels[-1] + 1]
-])
-
-#bounds = all_levels
-
-norm = BoundaryNorm(bounds, cmap_cat.N)
-
-# ---- heatmap 1: full design matrix ----
-sns.heatmap(
-    unnormalized_inpt,
-    ax=axes[0],
-    cmap=cmap_cat,
-    norm=norm,
-    cbar=False
-)
-
-axes[0].set_xticks([0.5, 1.5, 2.5],
-                   ["Sign. contr. \n(unnormalized)", "Prev choice", "WSLS"])
-axes[0].set_yticks([])
-axes[0].set_xlabel("Predictors")
-axes[0].set_ylabel("Trials")
-axes[0].set_title("Design matrix")
-
-# ---- heatmap 2: choices ----
-sns.heatmap(
-    valid_choices.to_numpy().reshape(-1, 1),
-    ax=axes[1],
-    cmap=cmap_cat,
-    norm=norm,
-    cbar=True
-)
-axes[0].set_yticks([])
-axes[1].set_xticks([0.5], ["Choices"])
-
-cbar = axes[1].collections[0].colorbar
-
-midpoints = (bounds[:-1] + bounds[1:]) / 2
-cbar.ax.minorticks_off()
-cbar.set_ticks(midpoints)
-cbar.set_ticklabels([str(v) for v in signed_levels])
-
-plt.tight_layout()
-plt.show()
-
 
 # %%
 
@@ -1075,17 +1017,11 @@ class PARAMS:
         self.coef = coef
         self.intercept = intercept
 param = PARAMS(model.coef_, model.intercept_)
+
 #compute_rate_per_state(design_matrix, model, model.inverse_link_function)
 rate_per_stat = compute_rate_per_state(design_matrix, param, model.inverse_link_function)
 
 # Error : 'GLMHMM' object has no attribute 'coef' || should be coef_?
-
-
-# %%
-#rate_per_stat = compute_rate_per_state(design_matrix, model, model.inverse_link_function)
-
-# %%
-[max(stim_vals), 0, min(stim_vals)]
 
 
 # %% [markdown]
