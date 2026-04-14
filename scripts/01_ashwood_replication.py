@@ -242,35 +242,41 @@ signed_contrast = stim_left - stim_right
 print(signed_contrast)
 
 # %%
-# nemos version
-bas = nmo.basis.HistoryConv(1)
-#choice, reward = np.random.choice([-1, 1], size=(2,10))
-identity = nmo.basis.IdentityEval()
-
-
-X = (identity + bas + bas*bas).compute_features(signed_contrast, choice, choice, rewarded)
-
-X
-
-# %% [markdown]
-# Now we will create the next predictor: previous choice
-
-# %%
 # Get rid of violation trials i.e trials where the mouse didn't make a choice
 # previous choice vector getting rid of violation trials
 
 # violation mask is going to change
 valid_choices_idx = np.where(~choice.isin([viol_val]))[0]
-valid_choices = choice[valid_choices_idx]
-# Shift the array elements one position to the right
-previous_choice = np.roll(valid_choices, 1)
-# Set first choice as first previous_choice
-previous_choice[0] = valid_choices[0]
-print(previous_choice)
 
 # %% [markdown]
-# Now we will compute the final predictor: win-stay lose-shift
+# With those two objects and using nmo.basis, it is very easy to compute our design matrix!
+
 # %%
+# nemos version
+basis = nmo.basis.HistoryConv(1)
+#choice, reward = np.random.choice([-1, 1], size=(2,10))
+identity = nmo.basis.IdentityEval()
+
+unnormalized_inpt = (identity + basis + basis*basis).compute_features(signed_contrast[valid_choices_idx], choice[valid_choices_idx], choice[valid_choices_idx], rewarded[valid_choices_idx])
+
+# And then normalize across the signed contrast
+normalized_inpt = np.copy(unnormalized_inpt)
+normalized_inpt[:, 0] = preprocessing.scale(normalized_inpt[:, 0])
+
+# %% [markdown]
+# ::: admonition on what basis are and the equivalent code
+
+# %% [markdown]
+# Now we will create the next predictor: previous choice
+
+# %%
+# Shift the array elements one position to the right
+previous_choice = np.roll(choice[valid_choices_idx], 1)
+# Set first choice as first previous_choice
+previous_choice[0] = choice[valid_choices_idx][0]
+print(previous_choice)
+
+# Now we will compute the final predictor: win-stay lose-shift
 # choice change of mapping will also change this probably
 # remap previous choice vals to {-1, 1} to match 1 -> rightward evidence and -1 -> leftward evidence
 remapped_previous_choice = previous_choice
@@ -284,9 +290,7 @@ previous_reward[0] = valid_rewards[0]
 wsls = previous_reward * remapped_previous_choice
 print(wsls)
 
-# %% [markdown]
 # Now can create our design matrix and fill it with the three vectors: stimuli, previous choice and wsls.
-# %%
 # Remove stimuli of invalid choices
 signed_contrast =  signed_contrast[valid_choices_idx]
 # Create matrix to be filled with the predictors
