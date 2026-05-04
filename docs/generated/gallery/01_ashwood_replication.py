@@ -12,7 +12,9 @@
 #     language: python
 #     name: python3
 # ---
-
+"""
+# Bla
+"""
 # %% [markdown]
 # # Inferring behavioral strategies during decision making using GLM-HMMs
 # One can think of decision-making as a stable process: given the same stimulus, an animal could be assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: how can we infer these latent behavioral strategies directly from observed choices?

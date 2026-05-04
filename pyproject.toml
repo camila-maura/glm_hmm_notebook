@@ -10,6 +10,7 @@ dependencies = [
     "ipympl>=0.10.0",
     "jupytext>=1.19.1",
     "matplotlib>=3.10.8",
+    "mkdocs>=1.6.1",
     "numpy<=2.3.5",
     "seaborn>=0.13.2",
 ]
