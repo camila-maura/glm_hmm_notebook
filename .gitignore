@@ -5,3 +5,7 @@ __pycache__
 nemos
 geometric_decoding_class_solved.ipynb
 IBL
+
+_build
+build
+_static

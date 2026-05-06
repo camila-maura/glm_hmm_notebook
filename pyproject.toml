@@ -13,4 +13,9 @@ dependencies = [
     "mkdocs>=1.6.1",
     "numpy<=2.3.5",
     "seaborn>=0.13.2",
+    "sphinx-autodoc-typehints>=3.10.2",
+    "sphinx-contributors>=0.3.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.7.0",
+    "sphinx-togglebutton>=0.4.5",
 ]
