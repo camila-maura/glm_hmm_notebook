@@ -19,7 +19,7 @@ kernelspec:
 # Infer behavioral strategies during decision making using GLM-HMMs
 One can think of decision-making as a stable process: given the same stimulus, an animal could be assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: how can we infer these latent behavioral strategies directly from observed choices?
 
-In this notebook, we address this question using the GLM-HMM framework, which combines a Generalized Linear Model (GLM; in particular, a Bernoulli GLM) with a Hidden Markov Model (HMM) to capture both how decisions change as a function of stimuli and how strategies evolve over time. We will show how to use choice data to recover hidden behavioral states using the NeMoS implementation of a Bernoulli GLM-HMM, replicating the main findings of Ashwood et al. (2022)<span id="cite1a"></span><a href="#ref1a">[1a]</a>.
+In this notebook, we address this question using the GLM-HMM framework, which combines a Generalized Linear Model (GLM; in particular, a Bernoulli GLM) with a Hidden Markov Model (HMM) to capture both how decisions change as a function of stimuli and how strategies evolve over time. We will show how to use choice data to recover hidden behavioral states using the NeMoS implementation of a Bernoulli GLM-HMM, replicating the main findings of Ashwood et al. (2022) <span id="cite1a"></span><a href="#ref1a">[1a]</a>.
 
 We have four main goals for this tutorial:
 
@@ -27,9 +27,8 @@ We have four main goals for this tutorial:
 2. Show how to create a design matrix with different behavioral predictors
 3. Show how to fit choice data using a GLM-HMM
 4. Show how to interpret GLM-HMM fitting results
-5. Provide some ideas for follow-up analyses
 
-Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs. If you need an explanation, please refer to our tutorials on GLMs and GLM-HMMs. Moreover, if you already have a good understanding of GLM-HMMs and are interested in different heuristics you could use to overcome difficulties in the fitting process, please refer to our tutorial for fine-grain details of the fitting algorithm and different initialization methods you could use to ensure the best possible fit and thus description of your data under this model.
+Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs. If you need an explanation, please refer to our [background section on GLMs and GLM-HMMs - PENDING](). Moreover, if you already have a good understanding of GLM-HMMs and are interested in different heuristics you could use to overcome difficulties in the fitting process, please refer to our [background section for GLM HMM fitting - PENDING](), which includes different initialization methods and fine-grain details of the fitting algorithm.
 
 +++
 
@@ -74,16 +73,16 @@ sns.set_theme(style="ticks", palette="colorblind", font_scale=1.5, rc=custom_par
 :scale: 120%
 :alt: Task illustration
 :align: right
-Task illustration. Modified from IBL et al. (2021) <span id="cite5a"></span><a href="#ref5a">[5a]</a>.
+Task illustration. Modified from IBL et al. (2021) <span id="cite2b"></span><a href="#ref2b">[2b]</a>.
 ```
 
 
-We will analyze the IBL decision-making task  (IBL et al., 2021 <span id="cite5b"></span><a href="#ref5b">[5b]</a>), which is a variation of the two-alternative forced-choice perceptual detection task (Burgess et al. (2021) <span id="cite6"></span><a href="#ref6">[6]</a>. During this task, a sinusoidal grating with varying contrast [0\%-100\%] appeared either at the right or left side of the screen. The goal for the mice was to indicate this side turning a little wheel so that this turn would accordingly move the stimuli to the center of the screen (Burgess et al. (2021) <span id="cite6"></span><a href="#ref6">[6]</a>. If the mice chose the side correctly, they would receive a water reward; if not, they would get a noise burst and there would be a 1 second timeout. For the first 90 trials of each session in the task, the stimulus appeared randomly on either side of the screen; after that, the stimulus would appear on one side with fixed probability 0.8 and alternate randomly every 20-100 trials. 
+We will analyze the IBL decision-making task  (IBL et al., 2021) <span id="cite2a"></span><a href="#ref2a">[2a]</a>, which is a variation of the two-alternative forced-choice perceptual detection task (Burgess et al. (2021) <span id="cite3"></span><a href="#ref3">[3]</a>. During this task, a sinusoidal grating with varying contrast [0\%-100\%] appeared either at the right or left side of the screen. The goal for the mice was to indicate this side turning a little wheel so that this turn would accordingly move the stimuli to the center of the screen (Burgess et al. (2021) <span id="cite3"></span><a href="#ref3">[3]</a>. If the mice chose the side correctly, they would receive a water reward; if not, they would get a noise burst and there would be a 1 second timeout. For the first 90 trials of each session in the task, the stimulus appeared randomly on either side of the screen; after that, the stimulus appeared on one side with fixed probability 0.8 and alternate randomly every 20-100 trials. 
 
 First, let's download the data using [Open Neurophysiology Environment (ONE)](https://docs.internationalbrainlab.org/notebooks_external/one_quickstart.html)
 
 ```{code-cell} ipython3
-# Using ONE's load_aggregate function, we can retrieve all sessions from a given animal. For this, first we need to instantiate the ONE object
+# Instantiate the ONE object
 one = ONE(password = 'international')
 
 # Then we need to choose our subject and run load_aggregate
@@ -94,13 +93,12 @@ trials = one.load_aggregate('subjects', subject, '_ibl_subjectTrials.table')
 print(trials.columns)
 ```
 
-```{admonition} Should I use one.search() or load_aggregate?
+```{admonition} Should I use one.search() or load_aggregate to download all the data from an animal?
 :class: tip dropdown
 
 `one.search()` returns session IDs (eids) that exist as session records in Alyx, while `load_aggregate()` downloads a pre-computed file with trial data pooled across multiple sessions. If you want to get all sessions from a single animal, it is recommended to use `load_aggregate`, because some sessions may be located in a dataframe without a session identifier in itself (but containing multiple sessions with their own session identifiers).
 ```
-
-We are modeling choice as result of observables and behavioral state. Thus, we need choice, stimuli presented and reward obtained. Additionally, we want to keep the session identifier to know when sessions start and end and for plotting. Furthermore, in this task, the probability of the stimulus being in the left or the right side of the screen changes over time within a session. Thus, we also want the information of the probability of the stimulus appearing in a given position.
+We can take a subset of those columns to keep only the relevant sources of information. We are modeling choice as result of observables and behavioral state, so we need choice, stimuli presented and reward obtained. Additionally, we want to keep the information of the probability of the stimulus appearing in a given position since this changes within a session, and the session id to know when sessions start and end.
 
 | Variable            | Description |
 |---------------------|-------------|
@@ -128,7 +126,7 @@ print(f"probability of stimulus on left \nvalues: {trials.probabilityLeft.unique
 print(f"session \n(some) values: {trials.session.unique()[:5]}, data type: {trials.session.dtype}\n")
 ```
 
-Now, we will restrict the analysis to the first 90 trials of each session. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5). In this regime, choices are driven primarily by sensory evidence rather than learned expectations about stimulus probability. After trial 90, the task switches to a block structure in which the left stimulus occurs with probability 0.8 or 0.2, alternating across blocks within the session.
+Now, we will restrict the analysis to the first 90 trials of each session to match the work of Ashwood et al. (2022) <span id="cite1b"></span><a href="#ref1b">[1b]</a>. In this segment, the stimulus appears on the left and right with equal probability (0.5/0.5), and thus choices should be driven primarily by sensory evidence rather than learned expectations about stimulus probability.
 
 ```{code-cell} ipython3
 # Choose example session
@@ -202,20 +200,21 @@ Now, with the valid sessions, we can compute the design matrix. In our case, we 
 
 +++
 
-The first predictor, signed contrast, encodes sensory evidence in 1D. Within this predictor, magnitude reflects strength of evidence and sign encodes direction. The second prediction, previous choice, is a lagged version of current choice, and it reflects serial dependence on decisions. Finally, the third predictor is win-stay lose-shift. This reflects the interaction between past choice and outcome. If an animal made a decision and it was rewarded in a previous trial, then the predictor indicates to "stay". That is, to repeat that choice. Conversely, if the previous choice was not rewarded, then the predictor indicates to "switch" to the other alternative.
+The first predictor, signed contrast, encodes sensory evidence in 1D. Within this predictor, magnitude reflects strength of evidence and sign encodes direction. The second predictor, previous choice, is a lagged version of current choice, and it reflects serial dependence on decisions. The third predictor, win-stay lose-shift, reflects the interaction between past choice and outcome. If an animal made a decision and it was rewarded in a previous trial, then the predictor indicates to "stay". That is, to repeat that choice. Conversely, if the previous choice was not rewarded, then the predictor indicates to "switch" to the other alternative.
 
 Let's go through the process of building the design matrix with one session.
 
 ```{code-cell} ipython3
 # Select an example session
-eid = valid_sessions[0]  
-df_sess = df_trials[df_trials["session"] == eid]
+example_session_id = valid_sessions[0]  
+df_example_session = df_trials[df_trials["session"] == example_session_id]
 
-# We can select all the necessary values for the design matrix: choice, contrast of stimuli and reward
-choices = df_sess['choice'].reset_index(drop=True)
-stim_left = df_sess['contrastLeft'].reset_index(drop=True)
-stim_right = df_sess['contrastRight'].reset_index(drop=True)
-rewarded = df_sess['feedbackType'].reset_index(drop=True)
+# We can select all the necessary values for the design matrix: 
+# choice, contrast of stimuli and reward
+choices = df_example_session['choice'].reset_index(drop=True)
+stim_left = df_example_session['contrastLeft'].reset_index(drop=True)
+stim_right = df_example_session['contrastRight'].reset_index(drop=True)
+rewarded = df_example_session['feedbackType'].reset_index(drop=True)
 ```
 
 For the first predictor: signed contrast.
@@ -231,45 +230,40 @@ print(signed_contrast)
 ```
 
 ```{code-cell} ipython3
-# Get rid of violation trials i.e trials where the mouse didn't make a choice
+# Get rid of violation trials
 valid_choices_idx = np.where(~choices.isin([viol_val]))[0]
-
-# drop all invalid trials from here
 ```
 
-With those two elements and using ```nmo.basis```, it is very easy to compute our design matrix for this session.
+With those two elements we can compute our design matrix for this session. We will do this using the NeMoS basis class ```nmo.basis```, which will make the process a lot easier.
 
 A basis is a collection of functions that, when combined, can represent more complex relationships. NeMoS has a lot of different basis functions, but here we are interested in using two: ```HistoryConv``` and ```IdentityEval```.
 
-- ```HistoryConv``` includes the history of the samples as predictor. It is intended to be used for including a raw history as predictor. We can use this to create the previous choice predictor.
+- ```HistoryConv``` includes the history of the samples as predictor. It is intended to be used for including raw history as predictor. You can decide how much history in the past you want to have, but now we only want one choice in the past. We can use this to create the previous choice predictor.
 
-- ```IdentityEval``` includes the samples themselves as predictors. It is intended to be used for including a task variable directly as a predictor. We can use this for the stimuli predictor. 
-
--Point of basis is to make it a nemos object
--you can decide howmuch history in the past you can have but now we only want one
+- ```IdentityEval``` includes the samples themselves as predictors. The point of this basis is to make the predictor into a NeMoS object. We can use this for the stimuli predictor. 
 
 It is very easy to declare our basis objects:
 
 ```{code-cell} ipython3
+# Prev history with history of 1
 prev_choice_basis = nmo.basis.HistoryConv(1)
+# Identity basis for stimuli
 stimuli_basis = nmo.basis.IdentityEval()
 ```
 
-However, we are still missing one predictor: win-stay lose shift. This is a combination of previous choice and previous reward. To have interaction between predictors, we can use composite basis. In particular, we can apply two types of operations: addition and multiplication. Addition simply concatenates the basis objects. However, when multiplying two basis objects, one constructs interaction features by taking the row-wise product of the feature vectors produced by each basis after evaluation.
-
-- Refer back to table. Since this var is just the product. this type of interaction can be captured by multip.
+However, we are still missing one predictor: win-stay lose-shift. This is an interaction of previous choice with previous reward. To capture interaction between variables, we can use a [multiplicative basis object - PENDING](), which takes the outer product of the elements that compose it.
 
 ```{code-cell} ipython3
 # Create lagged reward predictor
 prev_reward_basis = nmo.basis.HistoryConv(1)
 
-# Create multiplicative basis object for interaction between previous choice and reward
+# Create multiplicative basis object
 wsls_basis = prev_choice_basis*prev_reward_basis
 ```
 
-Now we have all our bases. We can create a composite basis including all of them and then all we need to do now is to apply the basis transformation to the input data. We can do this by using ```compute_features```. This method is designed to be a high-level interface for transforming input data using the basis functions. 
+Now we have all our bases. We can create an additive basis including all of them and then all we need to do now is to apply the basis transformation to the input data. We can do this by using ```compute_features```. This method is designed to be a high-level interface for transforming input data using the basis functions. 
 
-Even though we need just a few lines of code, there is a lot going on. Here's a breakdown of what will happening:
+Even though we need just a few lines of code, there is a lot going on. Here's a breakdown of what is happening:
 1. We will create an additive basis ```basis_object``` with our bases ```stimuli_basis```, ```wsls_basis``` and ```prev_choice_basis```. 
 2. ```wsls_basis``` is a multiplicative basis that takes two inputs.
 3. We will compute the features for our ```basis_object``` using ```compute_features```. Since the bases in our composite basis take a total of 4 inputs (```stimuli_basis``` takes 1 input, ```wsls_basis``` takes 2 inputs and ```prev_choice_basis``` takes 1 input), we need to pass 4 features to ```compute_features```.
@@ -320,55 +314,62 @@ By normalizing, we are rescaling the predictor to have mean 0 and standard devia
 and see our design matrix.
 
 ```{code-cell} ipython3
-fig, axes = plt.subplots(
-    1, 
-    2, 
-    figsize=(3.5, 8), 
-    sharey=True,
-)
+:tags: [hide-input]
 
-# ---- define signed contrast bins 
+def plot_design_matrix():
+    fig, axes = plt.subplots(
+        1, 
+        2, 
+        figsize=(3.5, 8), 
+        sharey=True,
+    )
 
-cmap_cat = LinearSegmentedColormap.from_list(
-    "bias_map",
-    ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
-)
+    # ---- define signed contrast bins 
 
-# ---- heatmap 1: full design matrix ----
-sns.heatmap(
-    X[:20,:],
-    ax=axes[0],
-    square=True,
-    cmap=cmap_cat,
-    cbar=False,
-    vmin=-2.4,
-    vmax= 2.4
-)
+    cmap_cat = LinearSegmentedColormap.from_list(
+        "bias_map",
+        ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
+    )
 
-axes[0].set_xticks([0.5, 1.5, 2.5],
-                   ["Sign. contr.", "WSLS", "Prev. choice",], 
-                   rotation=90)
-axes[0].set_yticks([])
-axes[0].set_ylabel("Trials")
-axes[0].set_title("Design \nmatrix")
+    # ---- heatmap 1: full design matrix ----
+    sns.heatmap(
+        X[:20,:],
+        ax=axes[0],
+        square=True,
+        cmap=cmap_cat,
+        cbar=False,
+        vmin=-2.4,
+        vmax= 2.4
+    )
 
-# ---- heatmap 2: choices ----
-sns.heatmap(
-    choices[valid_choices_idx].to_numpy().reshape(-1, 1)[:20],
-    ax=axes[1],
-    square=True,
-    cmap=cmap_cat,
-    cbar=True,
-    vmin=-2.4,
-    vmax= 2.4
-)
-axes[0].set_yticks([])
-axes[1].set_xticks([0.5], 
-                   ["Choices"], 
-                   rotation=90)
+    axes[0].set_xticks([0.5, 1.5, 2.5],
+                    ["Sign. contr.", "WSLS", "Prev. choice",], 
+                    rotation=90)
+    axes[0].set_yticks([])
+    axes[0].set_ylabel("Trials")
+    axes[0].set_title("Design \nmatrix")
 
-plt.tight_layout()
-plt.show()
+    # ---- heatmap 2: choices ----
+    sns.heatmap(
+        choices[valid_choices_idx].to_numpy().reshape(-1, 1)[:20],
+        ax=axes[1],
+        square=True,
+        cmap=cmap_cat,
+        cbar=True,
+        vmin=-2.4,
+        vmax= 2.4
+    )
+    axes[0].set_yticks([])
+    axes[1].set_xticks([0.5], 
+                    ["Choices"], 
+                    rotation=90)
+
+    plt.tight_layout()
+    plt.show()
+```
+
+```{code-cell} ipython3
+plot_design_matrix()
 ```
 
 Similarly, we can do this process for all the sessions
@@ -424,46 +425,28 @@ choices.replace({1: 1, -1: 0}, inplace = True)
 
 Importantly, do not do 3000 trials at once! Instead, they generally do several sessions of 100-300 trials, and we use all the sessions together to fit our model. For our model to be accurate, we need to tell it when our session boundaries are: we don't want it to compute all sessions as if they were one. 
 
-With NeMoS, we have two ways of indicating the beginning of a new session. When using a design matrix and a choice vector that are Numpy objects, NeMoS treats NaNs either in the input matrix X or in the choice vector y as indicators of new sessions. You can also use a Pynapple Tsd or TsdFrame to demarcate sessions, which is what we will use now.
+
+In NeMoS we have two ways of indicating the beginning of a new session. You can use a Pynapple Tsd or TsdFrame to demarcate sessions, in which case session demarcations are inherited from the pynapple objects. Alternatively, when using a design matrix and a choice vector that are Numpy objects, it is necessary to pass a session indicator. This can be:
+- a boolean array or integer array of 1s and 0s indicating session starts, shape ``(n_samples,)``
+- an integer array of indices marking session starts, shape ``(n_sessions,)``
+- a pynapple.IntervalSet marking session epochs (requires either X or y to be a pynapple Tsd or TsdFrame to get timestamps)
 
 ```{code-cell} ipython3
 # Mark where session changes
 new_sess_mouse = np.ones(len(session), dtype=int)
 new_sess_mouse[1:] = (session[1:] != session[:-1])
-
-# Get positions of start of sessions
-new_sess_pos = np.array(np.where(new_sess_mouse==1))
-# Get length of session
-sess_length = np.array(np.where(new_sess_mouse==1))[0][1] - 1 # substracting the starting trial
-```
-
-We will use a ```nap.Tsd``` now, because the choices are a 1-dimensional time series. To initialize it, we need the length of the series ```t``` and the data of the time series ```d``` (our choices vector). In addition to this, we can we can initialize our ```nap.Tsd``` with a ```time_support``` property, and this way store both the choices and the sessions information in the same object.
-
-+++
-
-admonition When dealing with 2-dimensional time series, you should use the ```nap.TsdFrame``` object. If you want to learn more about Pynapple objects, check out [Pynapple documentation](https://pynapple.org/user_guide/01_introduction_to_pynapple.html).
-
-```{code-cell} ipython3
-choices_tsd = nap.Tsd(t = np.arange(choices.shape[0]), d=choices, time_support = nap.IntervalSet(
-    start=new_sess_pos, 
-    end = new_sess_pos+ sess_length))
-
-print(f"choices tsd \n {choices_tsd[:5]} \n")
-print(f"time support\n {choices_tsd.time_support[:5]}")
 ```
 
 ## 03. Fitting a GLM-HMM with NeMoS (Maximum Likelihood)
-We will use a Bernoulli GLM to model this mouse's choices. For this, we first need to initialize the ```GLMHMM``` object. The only required parameter is the number of states. Ashwood et al. (2022) <span id="cite1d"></span><a href="#ref1d">[1d]</a> found that most mice used 3 decision-making states when performing the IBL decision-making task  (IBL et al., 2021 <span id="cite5c"></span><a href="#ref5c">[5c]</a>). Following that work, we will initialize our ```GLMHMM``` object with 3 states.
+We will use a Bernoulli GLM to model this mouse's choices. For this, we first need to initialize the ```GLMHMM``` object. The only required parameter is the number of states. Ashwood et al. (2022) <span id="cite1d"></span><a href="#ref1d">[1d]</a> found that most mice used 3 decision-making states when performing this task. Following that work, we will initialize our ```GLMHMM``` object with 3 states.
 
 ```{admonition} GLM-HMM observation models
 :class: note
 
 The default observation model for the GLM-HMM is Bernoulli, but Categorical (Multinomial), Poisson, Gamma, Negative Binomial and Gaussian observation models are also available. If you want, you can also set a different observation model of your choice and personalize the inverse link function. However, bear in mind that convexity is not guaranteed for all likelihood functions.
 
-For more information, refer to Escola et al (2011)<span id="cite3b"></span><a href="#ref3b">[3b]</a> and also to [our notebook on GLM-HMM theoretical underpinnings - PENDING]().
+For more information, refer to Escola et al (2011)<span id="cite4"></span><a href="#ref4">[4]</a> and also to [our notebook on GLM-HMM theoretical underpinnings - PENDING]().
 ```
-
-We will use default initialization settings which are [explain].
 ____
 
 [PENDING - do not edit because it might change]()
@@ -485,17 +468,23 @@ model = nmo.glm_hmm.GLMHMM(
 print(model)
 ```
 
-!!! note "Importance of initial parameters in GLM-HMMs" 
-      When fitting a GLM-HMMs, the likelihood surface is non-convex, and EM-based fitting can converge to different local optima depending on starting values. As a result, different initializations can lead to qualitatively different parameters. In practice, this makes it necessary to either run multiple random restarts or use informed initializations derived from simpler models (e.g. logistic regression or clustering of behavior).
-      
-      For a more detailed example of how initialization affects convergence and interpretation, refer to [our notebook on GLM-HMM theoretical underpinnings - PENDING]()
+```{admonition} "Importance of initial parameters in GLM-HMMs"
+:class: question
+:class: dropdown
+When fitting a GLM-HMMs, the likelihood surface is non-convex, and EM-based fitting can converge to different local optima depending on starting values. As a result, different initializations can lead to qualitatively different parameters. In practice, this makes it necessary to either run multiple random restarts or use informed initializations derived from simpler models (e.g. logistic regression or clustering of behavior).
+
+For a more detailed example of how initialization affects convergence and interpretation, refer to [our notebook on GLM-HMM theoretical underpinnings - PENDING]()
+```
 
 +++
 
 Once we created our object, we can fit our model. The fit function takes two mandatory arguments: the design matrix ```X```we created in section 02 and the ```choices_tsd```.
 
 ```{code-cell} ipython3
-model.fit(X, choices_tsd)
+model.fit(X, 
+          np.asarray(choices),
+          is_new_session=new_sess_mouse
+)
 ```
 
 Thats all it takes!
@@ -649,7 +638,11 @@ To better understand the temporal structure of decision making behavior, we can 
 
 ```{code-cell} ipython3
 # Compute smooth_proba
-posteriors = model.smooth_proba(X, choices_tsd)
+posteriors = model.smooth_proba(
+    X, 
+    np.asarray(choices),
+    is_new_session=new_sess_mouse
+)
 print(f"First five osteriors \n{posteriors[:5]} \n")
 
 # Each (non nan) row sums to 1
@@ -660,6 +653,11 @@ print(
 ```
 
 And we can plot it!
+
+```{code-cell} ipython3
+sess_ex_1 = np.where(session == '66f20f92-171f-4cc5-aca9-69fc3cb6370f')[0]
+posteriors[sess_ex_1]
+```
 
 ```{code-cell} ipython3
 :tags: [hide-input]
@@ -754,14 +752,19 @@ This function takes three mandatory parameters, a matrix of predictors X of shap
 
 ```{code-cell} ipython3
 # get output of viterbi in one-hot encoding
-decoded_states = model.decode_state(X,choices_tsd, state_format = "one-hot")
+decoded_states = model.decode_state(
+    X,
+    np.asarray(choices),
+    is_new_session=new_sess_mouse,
+    state_format = "one-hot"
+)
 print(f"{decoded_states} \n")
 
 # calculate how many instances of occupancy there is in each of them
 print(f"Total instances of each state {np.nansum(decoded_states, axis=0)} \n")
 
 # calculate fraction of occupancy
-frac_occupancy_viterbi= np.nansum(decoded_states, axis=0)/len(choices_tsd)
+frac_occupancy_viterbi= np.nansum(decoded_states, axis=0)/len(choices)
 print(f"Fraction of occupancy {frac_occupancy_viterbi} \n")
 ```
 
@@ -779,7 +782,7 @@ correct_ans_task = np.sign(non_zero_contrast)
 correct_ans_task_remapped = (correct_ans_task+ 1) / 2
 
 # Get accuracy i.e how many choices match / how many choices were made
-correct_ans_mouse = np.sum(choices_tsd[non_zero_contrast_loc] == correct_ans_task_remapped) 
+correct_ans_mouse = np.sum(np.asarray(choices)[non_zero_contrast_loc] == correct_ans_task_remapped) 
 
 total_accuracy = correct_ans_mouse/len(correct_ans_task)
 
@@ -799,7 +802,7 @@ for state in range(n_states):
     
     # Get contrast and choices for this state
     signed_contrast_this_state = signed_contrast[idx_this_state]
-    choices_this_state = choices_tsd[idx_this_state]
+    choices_this_state = np.asarray(choices)[idx_this_state]
     
     # See where the input is not 0
     not_zero_contrast_loc_this_state = np.where(signed_contrast_this_state != 0)[0]
@@ -894,7 +897,7 @@ occupancy_per_state = np.unique(states_max_posterior, return_counts=True)[1]
 print(f"Total instances of each state {occupancy_per_state} \n")
 
 # calculate fraction of occupancy
-frac_occupancy_smooth_proba = occupancy_per_state/len(choices_tsd)
+frac_occupancy_smooth_proba = occupancy_per_state/len(choices)
 print(f"Fraction of occupancy {frac_occupancy_smooth_proba } \n")
 ```
 
@@ -910,7 +913,7 @@ With this segmentation, we can calculate accuracy in the exact same manner as in
 ```{code-cell} ipython3
 :tags: [hide-input]
 
-def get_accuracies_to_plot(idx_per_state, total_accuracy=total_accuracy, n_states=n_states, signed_contrast=signed_contrast, choices_tsd=choices_tsd):
+def get_accuracies_to_plot(idx_per_state, total_accuracy=total_accuracy, n_states=n_states, signed_contrast=signed_contrast, choices=choices):
     # Total accuracy remains the same
     accuracies_to_plot = np.zeros([4,])
     # Use previously calculated total_accuracy
@@ -921,7 +924,7 @@ def get_accuracies_to_plot(idx_per_state, total_accuracy=total_accuracy, n_state
 
         # Get contrast and choices for this state
         signed_contrast_this_state = signed_contrast[idx_this_state]
-        choices_this_state = choices_tsd[idx_this_state]
+        choices_this_state = np.asarray(choices)[idx_this_state]
         
         # See where the input is not 0
         not_zero_contrast_loc_this_state = np.where(signed_contrast_this_state != 0)[0]
@@ -955,34 +958,67 @@ Here, we obtained different results than in 4.5.1. This can be explained by the 
 
 +++
 
-## 05. Conclusions and next steps [pending]
+## 05. Conclusion
+We showed how to download and preprocess mice data from the IBL, how to create a design matrix and use it to fit choice data using a GLM-HMM, and how to interpret the results.
 
-follow state descriptions in the paper
-if you dont segment the paper then you would not be able to see some effects (see in what way they do that) -> explain at the very begining as a motivation and in the end as an interpretation -> why they thought to use this method
+Using basis objects, we created a design matrix with three predictors: stimulus, previous choice and WSLS. Using NeMoS, this just took a few lines of code:
+```
+prev_choice_basis = nmo.basis.HistoryConv(1)
+stimuli_basis = nmo.basis.IdentityEval()
+prev_reward_basis = nmo.basis.HistoryConv(1)
 
-- show the class or link to the class name and show all code again. Creatte design matrix and fit the model. Emphasize. This is brief and its quick. 
+# Multiplicative basis: interaction between prev. choice and reward
+wsls_basis = prev_choice_basis*prev_reward_basis
 
-The GLM-HMM captures structure in decision-making that is not explained by stationary models. Across sessions, behavior is better described as a mixture of a small number of latent strategies that persist over multiple trials rather than independent lapses around a single policy. This is visible both in the inferred posterior trajectories and in the Viterbi-decoded state sequences, which show extended dwell times within states and relatively infrequent switching.
+# Additive basis using our three basis
+basis_object = (
+    stimuli_basis +                         # will process one input
+    wsls_basis +                            # will process two inputs (choice & reward)
+    prev_choice_basis                       # will process one input
+)
 
-Each inferred state corresponds to a distinct decision policy: one primarily stimulus-driven, and others showing strong directional biases. The separation between these regimes is reflected consistently in both GLM weights and psychometric curves, indicating that the model recovers interpretable behavioral strategies rather than arbitrary partitions of the data.
-State occupancy and performance analyses further show that behavioral accuracy is not uniform across latent states. The stimulus-driven state yields higher task-aligned performance, while biased states show reduced accuracy, consistent with reduced sensitivity to sensory evidence.
+# Compute features
+X_unnormalized = basis_object.compute_features(
+    signed_contrast[valid_choices_idx],     # input 1 : processed with stimuli_basis
+    choices[valid_choices_idx],             # input 2 : wsls input 1: choice
+    rewarded[valid_choices_idx],            # input 3 : wsls input 2: reward
+    choices[valid_choices_idx]              # input 4 : processed with prev_choice
+)           
+```
+Similarly, the fitting process using NeMoS was also very fast and easy:
+```
+n_states = 3
+
+model = nmo.glm_hmm.GLMHMM(
+    n_states,
+    regularizer = "Ridge")
+
+model.fit(X, 
+          np.asarray(choices),
+          is_new_session=new_sess_mouse
+)
+```
+After fitting, we saw that across sessions, behavior could be described as a mixture of a small number of latent strategies that persist over multiple trials rather than independent lapses around a single policy. This is visible in the inferred posterior trajectories and in the Viterbi-decoded state sequences, which show extended dwell times within states. State occupancy and performance analyses further showed that behavioral accuracy is not uniform across latent states. The stimulus-driven state yields higher task-aligned performance, while biased states show reduced accuracy, consistent with reduced sensitivity to sensory evidence.
 
 +++
 
 ## Additional resources [pending]
-- [Zoe Ashwood's SSM tutorial on GLM-HMMs](https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb)
+- [NeMoS background on GLM-HMMs - Pending]()
+- Bishop (2006) Chapter 13 "Sequential Data": Specially section 13.2, "Hidden Markov Models", provides an overview of MLE for HMMs, the forward-backward algorithm and the viterbi algorithm.
+- [Zoe Ashwood's SSM tutorial on GLM-HMMs](https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb): ?
+- [GLM-HMMs blogpost by Camila Ucheoma](https://anneurai.net/2024/01/26/a-glm-hmm-deep-dive/): this blogpost provides a summary of Ashwood et al. (2022) work and a brief explanation of GLM-HMMs
 
 +++
 
 ## References
 <a id="ref1a"><a href="#cite1a">[1a]</a> <a id="ref1b"><a href="#cite1b">[1b]</a> <a id="ref1c"><a href="#cite1c">[1c]</a> <a id="ref1d"><a href="#cite1d">[1d]</a> <a id="ref1e"><a href="#cite1e">[1e]</a> Ashwood, Z. C., Roy, N. A., Stone, I. R., Laboratory, I. B., Urai, A. E., Churchland, A. K., Pouget, A., & Pillow, J. W. (2022). Mice alternate between discrete strategies during perceptual decision-making. Nature Neuroscience, 25(2), 201–212.
 
-<a id="ref2"><a href="#cite2">[2]</a> Bengio, Y., & Frasconi, P. (1995). An input-output HMM architecture. In G. Tesauro, D. S. Touretzky, & T. K. Leen (Eds.), Advances in neural information processing systems (Vol. 7, pp. 427–434). MIT Press.
+<a id="ref2a"><a href="#cite2a">[2a]</a><a id="ref2b"> <a href="#cite2b">[2b]</a> <a id="ref2c"><a href="#cite2c">[2c]</a> The International Brain Laboratory, Aguillon-Rodriguez, V., Angelaki, D., Bayer, H., Bonacchi, N., Carandini, M., Cazettes, F., Chapuis, G., Churchland, A. K., Dan, Y., Dewitt, E., Faulkner, M., Forrest, H., Haetzel, L., Häusser, M., Hofer, S. B., Hu, F., Khanal, A., Krasniak, C., … Zador, A. M. (2021). Standardized and reproducible measurement of decision-making in mice. eLife, 10, e63711. https://doi.org/10.7554/eLife.63711
 
-<a id="ref3a"><a href="#cite3a">[3a]</a> <a id="ref3b"><a href="#cite3b">[3b]</a> Escola, S., Fontanini, A., Katz, D., & Paninski, L. (2011). Hidden Markov models for the stimulus-response relationships of multistate neural systems. Neural Computation, 23(5), 1071–1132. https://doi.org/10.1162/NECO_a_00118
+<a id="ref3"><a href="#cite3">[3]</a> Burgess, C. P., Lak, A., Steinmetz, N. A., Zatka-Haas, P., Bai Reddy, C., Jacobs, E. A. K., Linden, J. F., Paton, J. J., Ranson, A., Schröder, S., Soares, S., Wells, M. J., Wool, L. E., Harris, K. D., & Carandini, M. (2017). High-Yield Methods for Accurate Two-Alternative Visual Psychophysics in Head-Fixed Mice. Cell Reports, 20(10), 2513–2524. https://doi.org/10.1016/j.celrep.2017.08.047
+
+<a id="ref4"><a href="#cite4">[4]</a> Escola, S., Fontanini, A., Katz, D., & Paninski, L. (2011). Hidden Markov models for the stimulus-response relationships of multistate neural systems. Neural Computation, 23(5), 1071–1132. https://doi.org/10.1162/NECO_a_00118
 
 <a id="ref4"><a href="#cite4">[4]</a> Bishop, C. M. (2006). Pattern recognition and machine learning. Springer.
 
-<a id="ref5a"><a href="#cite5a">[5a]</a><a id="ref5b"> <a href="#cite5b">[5b]</a> <a id="ref5c"><a href="#cite5c">[5c]</a> The International Brain Laboratory, Aguillon-Rodriguez, V., Angelaki, D., Bayer, H., Bonacchi, N., Carandini, M., Cazettes, F., Chapuis, G., Churchland, A. K., Dan, Y., Dewitt, E., Faulkner, M., Forrest, H., Haetzel, L., Häusser, M., Hofer, S. B., Hu, F., Khanal, A., Krasniak, C., … Zador, A. M. (2021). Standardized and reproducible measurement of decision-making in mice. eLife, 10, e63711. https://doi.org/10.7554/eLife.63711
-
-<a id="ref6"><a href="#cite6">[6]</a> Burgess, C. P., Lak, A., Steinmetz, N. A., Zatka-Haas, P., Bai Reddy, C., Jacobs, E. A. K., Linden, J. F., Paton, J. J., Ranson, A., Schröder, S., Soares, S., Wells, M. J., Wool, L. E., Harris, K. D., & Carandini, M. (2017). High-Yield Methods for Accurate Two-Alternative Visual Psychophysics in Head-Fixed Mice. Cell Reports, 20(10), 2513–2524. https://doi.org/10.1016/j.celrep.2017.08.047
++++
