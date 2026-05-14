@@ -16,7 +16,7 @@ kernelspec:
 
 ```
 
-# Inferring behavioral strategies during decision making using GLM-HMMs
+# Infer behavioral strategies during decision making using GLM-HMMs
 One can think of decision-making as a stable process: given the same stimulus, an animal could be assumed to respond according to a fixed strategy with some added noise. However, growing evidence suggests that behavior is not stationary. Instead, animals fluctuate between distinct internal states that can persist over many trials. Traditional models, such as the classic lapse model, capture errors as random, independent events, but fail to account for these structured, state-dependent fluctuations in behavior. This raises the question: how can we infer these latent behavioral strategies directly from observed choices?
 
 In this notebook, we address this question using the GLM-HMM framework, which combines a Generalized Linear Model (GLM; in particular, a Bernoulli GLM) with a Hidden Markov Model (HMM) to capture both how decisions change as a function of stimuli and how strategies evolve over time. We will show how to use choice data to recover hidden behavioral states using the NeMoS implementation of a Bernoulli GLM-HMM, replicating the main findings of Ashwood et al. (2022)<span id="cite1a"></span><a href="#ref1a">[1a]</a>.
@@ -50,10 +50,9 @@ import numpy as np
 import pynapple as nap
 import seaborn as sns
 from one.api import ONE
-from sklearn import preprocessing
+from scipy.stats import zscore
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm, LinearSegmentedColormap
-from scipy.special import expit
+from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
 from nemos.glm_hmm.utils import compute_rate_per_state
 ```
 
@@ -291,7 +290,7 @@ X_unnormalized = basis_object.compute_features(
     choices[valid_choices_idx]              # input 4 : processed with prev_choice
 )        
 
-print(X_unnormalized[:10,:])     
+print(X_unnormalized[:5,:])     
 ```
 
 And that's it! We have our unnormalized design matrix with signed contrast, win-stay lose-shift and previous choice as predictors.
@@ -299,59 +298,41 @@ And that's it! We have our unnormalized design matrix with signed contrast, win-
 As as last step, we now need to normalize our signed contrast predictor.
 
 ```{code-cell} ipython3
-# use zscore of scipy
-
 # Normalize across the signed contrast
 X = np.copy(X_unnormalized)
-X[:, 0] = preprocessing.scale(X[:, 0])
+X[:, 0] = zscore(X[:, 0])
 ```
 
-??? question "Why do we normalize our stimuli predictor?" 
-      When fitting a GLM-HMM, we are fitting a separate weight for each feature. However, if the features are on different numerical scales for reasons that are not related to the actual influence of each predictor, that renders the weights incomparable. Here we have three predictors:
-      
-      - (1) Previous choice and (2) WSLS are always exactly −1 or +1. Their values are discrete and bounded, and they already share the same scale.
-      - (3) Stimuli contrast is continuous. While it can reach −1 or +1 (full contrast), this value rarely occurs. 
-      
-      Because the stimuli contrast values are much smaller in typical magnitude than +/-1, the model compensates by assigning a larger weight to match the output scale, simply because its values are numerically smaller. In practice, this results in an artifact of scale that is not reflective of the  true influence of the predictor.
-      
-      By normalizing, we are rescaling the predictor to have mean 0 and standard deviation of 1. Previous choice and WSLS already on a unit scale by construction — their values are symmetric around zero and their spread is naturally 1. This is why we only normalize signed contrast.
+```{admonition} "Why do we normalize our stimuli predictor?" 
+:class: question
+:class: dropdown
+When fitting a GLM-HMM, we are fitting a separate weight for each feature. However, if the features are on different numerical scales for reasons that are not related to the actual influence of each predictor, that renders the weights incomparable. Here we have three predictors:  
+- (1) Previous choice and (2) WSLS are always exactly −1 or +1. Their values are discrete and bounded, and they already share the same scale.
+- (3) Stimuli contrast is continuous. While it can reach −1 or +1 (full contrast), this value rarely occurs. 
+
+Because the stimuli contrast values are much smaller in typical magnitude than +/-1, the model compensates by assigning a larger weight to match the output scale, simply because its values are numerically smaller. In practice, this results in an artifact of scale that is not reflective of the  true influence of the predictor.
+
+By normalizing, we are rescaling the predictor to have mean 0 and standard deviation of 1. Previous choice and WSLS already on a unit scale by construction — their values are symmetric around zero and their spread is naturally 1. This is why we only normalize signed contrast.
+```
 
 +++
 
 and see our design matrix.
 
 ```{code-cell} ipython3
-fig, axes = plt.subplots(1, 2, figsize=(5, 8), sharey=True)
+fig, axes = plt.subplots(
+    1, 
+    2, 
+    figsize=(3.5, 8), 
+    sharey=True,
+)
 
 # ---- define signed contrast bins 
-signed_levels = np.array([
-    -2.424443102018604,
-    -1.0,
-    -0.6694842882249763,
-    -0.3769911525927051,
-    -0.2307445847765695,
-    -0.0844980169604339,
-     0.06174855085570171,
-     0.20799511867183731,
-     0.5004882543041086,
-     1.0,
-     2.255447068097736,
-])
-
-all_levels = np.unique(signed_levels)
-all_levels.sort()
 
 cmap_cat = LinearSegmentedColormap.from_list(
     "bias_map",
     ["#377eb8", "white", "#4daf4a"]  # left → neutral → right
 )
-
-bounds = np.concatenate([
-    all_levels - 1e-6,
-    [all_levels[-1] + 1]
-])
-
-norm = BoundaryNorm(bounds, cmap_cat.N)
 
 # ---- heatmap 1: full design matrix ----
 sns.heatmap(
@@ -359,7 +340,6 @@ sns.heatmap(
     ax=axes[0],
     square=True,
     cmap=cmap_cat,
-    norm=norm,
     cbar=False,
     vmin=-2.4,
     vmax= 2.4
@@ -369,9 +349,8 @@ axes[0].set_xticks([0.5, 1.5, 2.5],
                    ["Sign. contr.", "WSLS", "Prev. choice",], 
                    rotation=90)
 axes[0].set_yticks([])
-#axes[0].set_xlabel("Predictors")
 axes[0].set_ylabel("Trials")
-axes[0].set_title("Design matrix")
+axes[0].set_title("Design \nmatrix")
 
 # ---- heatmap 2: choices ----
 sns.heatmap(
@@ -379,7 +358,6 @@ sns.heatmap(
     ax=axes[1],
     square=True,
     cmap=cmap_cat,
-    norm=norm,
     cbar=True,
     vmin=-2.4,
     vmax= 2.4
@@ -388,16 +366,6 @@ axes[0].set_yticks([])
 axes[1].set_xticks([0.5], 
                    ["Choices"], 
                    rotation=90)
-
-#cbar = axes[1].collections[0].colorbar
-
-#midpoints = (bounds[:-1] + bounds[1:]) / 2
-#cbar.ax.minorticks_off()
-#cbar.set_ticks(midpoints)
-#cbar.set_ticklabels([f"{v:.4g}" for v in signed_levels])
-
-# Set ticks manually
-# 
 
 plt.tight_layout()
 plt.show()
@@ -448,7 +416,7 @@ X_unnormalized = basis_object.compute_features(
 
 # And then normalize across the signed contrast
 X = np.copy(X_unnormalized)
-X[:, 0] = preprocessing.scale(X[:, 0])
+X[:, 0] = zscore(X[:, 0])
 
 # For fitting a Bernoulli, our variables need to be in 0-1 space. So we will remap them so 1: Left and 0: Right
 choices.replace({1: 1, -1: 0}, inplace = True)
@@ -480,8 +448,8 @@ choices_tsd = nap.Tsd(t = np.arange(choices.shape[0]), d=choices, time_support =
     start=new_sess_pos, 
     end = new_sess_pos+ sess_length))
 
-print(f"choices tsd \n {choices_tsd} \n")
-print(f"time support\n {choices_tsd.time_support}")
+print(f"choices tsd \n {choices_tsd[:5]} \n")
+print(f"time support\n {choices_tsd.time_support[:5]}")
 ```
 
 ## 03. Fitting a GLM-HMM with NeMoS (Maximum Likelihood)
@@ -599,6 +567,12 @@ def plot_glm_weights(model, n_states = n_states):
     # Labels
     X_labels = ["Stimulus", "Bias", "Prev.choice", "WSLS"]
 
+    state_labels = [
+        'State 1: "engaged"',
+        'State 2: "biased left"',
+        'State 3: "biased right"'
+    ]
+
     for state in range(n_states):
         plt.plot(
             range(n_features),
@@ -606,7 +580,7 @@ def plot_glm_weights(model, n_states = n_states):
             color=colors[state],
             marker="o",
             lw=1.5,
-            label="State {}".format(state + 1),
+            label=state_labels[state],
             linestyle="-",
         )
             
@@ -625,7 +599,6 @@ def plot_glm_weights(model, n_states = n_states):
 
 ```{code-cell} ipython3
 plot_glm_weights(model)
-# change names to engaged, left bias and right bias.
 ```
 
 We can see that the coefficients on state 1 have a large weight on the stimulus and low weight on the other predictors. Conversely, in states 2 and 3, the stimulus coefficient is comparatively lower. State 2 has a large positive weight on bias, while State 3 has a large negative weight on bias. Since the sign of our predictors indicates the side of evidence (>0 : left; <0 : right, see the table of variables in section 01) and their magnitude indicates the strength of such evidence, State 2 coefficients suggest a large bias towards leftward choice, while State 3 coefficients suggest a large bias to a rightward choice. All states have similarly low coefficients for prev. choice and wsls, with State 1 showing the smallest of them. 
@@ -669,7 +642,7 @@ def plot_transition_matrix(model, n_states= n_states):
 plot_transition_matrix(model)
 ```
 
-### 04.4 Using ```smooth_proba``` to see and interpret posterior state probabilities
+### 04.3 Using ```smooth_proba``` to see and interpret posterior state probabilities
 To better understand the temporal structure of decision making behavior, we can compute the probability of being in each state at each trial, conditioned on the entire observed sequence. For this, we can use ```smooth_proba```. This method uses the forward-backward algorithm to incorporate information from past and future observations. It answers to the question: "Given all observations, what is the probability that the system was in state $k$ at time $t$?"
 
 ```smooth_proba``` takes two arguments: a design matrix X and the observed neural activity y. The output is either a ```TsdFrame``` or an array of  posterior probabilities, shape ``(n_time_points, n_states)``. Each row sums to 1 and represents the probability distribution over states at that time point.
@@ -766,7 +739,7 @@ In these sessions, the posterior over latent states can be tracked at each trial
 
 +++
 
-### 04.5 Computing fraction of occupancy and accuracy per state using ```decode_state``` or ```smooth_proba```
+### 04.4 Computing fraction of occupancy and accuracy per state using ```decode_state``` or ```smooth_proba```
 
 +++
 
@@ -774,7 +747,7 @@ We can also be interested in quantify state occupancies (i.e what proportion of 
 
 +++
 
-#### 4.5.1) Using ```decode_state```
+#### 4.4.1) Using ```decode_state```
 This method finds the single most likely sequence of hidden states that best explains the observed data. It uses the Viterbi algorithm to compute the state sequence that maximizes the joint probability of states and observations.
 
 This function takes three mandatory parameters, a matrix of predictors X of shape (n_timepoints,n_features), a np.array or nap.Tsd of observations of shap (n_time_points,), and the format of the returned states, either in one-hot encoding format or as an array of shape (n_time_points,) containing the decoded state at each timepoint.
@@ -906,7 +879,7 @@ According to state occupancy derived with the Viterbi algorithm, this mouse spen
 
 +++
 
-#### 4.5.2) Using ```smooth_proba```
+#### 4.4.2) Using ```smooth_proba```
 Now we can compute the same quantities but using ```smooth_probs```. We used this method in 4.4 to compute the posterior probabilities! In contrast to ```decode_state```, which outputs the globally optimally state sequence, ```smooth_proba``` outputs probabilistic posteriors. With this alternative, we can go by the approach used in Ashwood et al. (2022): we can compute the posterior probability for each state at all times, and subset the trials for which there is high confidence (+90% probability) of being in a given state; then, we can assign each trial to its most likely state and count the fraction of trials assigned to each state. 
 
 The process is very similar to 4.5.1, with the difference in how we slice the trials and assign them to a specific state. We can start with the fraction of occupancy.

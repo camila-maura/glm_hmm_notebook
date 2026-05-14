@@ -14,11 +14,17 @@ jupyter:
 ## What are GLM-HMMs?
 GLM-HMMs, also known as input-out HMM models (Bengio & Frasconi, 1995) <span id="cite2"></span><a href="#ref2">[2]</a>,  are useful to analyze how hidden latent states affect observable behavioral (Ashwood et al., 2022) <span id="cite1a"></span><a href="#ref1a">[1a]</a> and neural (Escola et al., 2011)<span id="cite3a"></span><a href="#ref3a">[3a]</a> dynamics. These models are composed by an HMM, governing the distribution over the latent states, and state-specific GLMs, which specify the activity of the system at each state.
 
-![Graphical model of GLM-HMM](../assets/graphical_model.png)
+
+```{figure} ../assets/graphical_model.png
+:width: 1000%
+:alt: Graphical model GLM-HMM
+:align: left
+Graphical model of a GLM-HMM. The state $z_t$ at time $t$ depends only on the previous state $z_{t-1}$. The observation $y_t$ is independent of all previous observations conditioned on the current hidden state $z_t$. The observation $y_t$ is determined by the parameters of $\mathrm{GLM}_{z_t}$, conditioned on $z_t$. GLMs are models that describe how the output of a system $y_t$ varies as a function of some input $x_t$.
+```
 
 +++
 
-In all GLM-HMMs, the HMM component is fully defined by three elements: a state transition matrix, an initial probability vector and an emissions probability distribution (Bishop, 2006)<span id="cite4"></span><a href="#ref4">[4]</a>. A HMM with K hidden states has a $K \times K$ transition matrix that specifies the probability of transitioning from any state to any other,
+In all GLM-HMMs, the HMM component is fully defined by three elements: a state transition matrix, an initial probability vector and an emissions probability distribution (Bishop, 2006)<span id="cite4"></span><a href="#ref4">[4]</a>. A HMM with K hidden states has a $K \times K$ transition matrix $\boldsymbol{A}$ that specifies the probability of transitioning from any state to any other,
 
 \begin{align}
 p(z_t=j\mid z_{t-1} = i) = A_{ij}
@@ -27,42 +33,68 @@ p(z_t=j\mid z_{t-1} = i) = A_{ij}
 where $z_{t-1}$ and $z_t$ indicate the latent state at trials $t-1$ and $t$, respectively. The HMM also has a distribution over the initial states, given by a $K$-element vector $\pi$ whose elements sum to one:
 
 \begin{align}
-p(z_1 = i) = \boldsymbol{\pi}_i
+p(z_1 = i) = \pi_i,\quad \sum_{i=1}^{K} \pi_i = 1
 \end{align}
 
-Finally, the emissions probability describes the relationship between the state and the observation. In the case of GLM-HMMs, the emissions probability is a GLM (it can be, for example, a Bernoulli GLM); that is, a generalization of linear regression that allows to characterize how an output (behavior, neuronal activity) may vary as a function of an input.
+Finally, the emissions probability describes the relationship between the state and the observation. In the case of GLM-HMMs, the emissions probability is a GLM; that is, a generalization of linear regression that allows to characterize how an output (behavior, neuronal activity) may vary as a function of an input.  A $K$-state GLM-HMM contains $K$ independent GLMs, each defined by a weight vector specifying how inputs are integrated in that particular state to give rise to activity. These describe the state-dependent mapping from inputs to activity. 
 
-A $K$-state GLM-HMM contains $K$ independent GLMs, each defined by a weight vector specifying how inputs are integrated in that particular state to give rise to activity. These describe the state-dependent mapping from inputs to activity. In this tutorial, we will use a GLM-HMM with a Bernoulli observation model i.e., a Bernoulli GLM.
+
+```{admonition} Note
+:class: tip
+Take a look at the NeMoS GLM documentation if you need a review on GLMs
+```
+
+For example, with a Bernoulli GLM and looking at a single timepoint we would have
 
 \begin{align}
-y_t \mid \boldsymbol{x}, \boldsymbol{k} \sim Ber(f(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)) \\
+y_t \mid \mathbf{x}_t, z_t 
+\sim \mathrm{Bernoulli}\left(
+\sigma(\mathbf{w}_{z_t} \mathbf{x}_t)
+\right)
 \end{align}
 
-where $\boldsymbol{w}_k \in \mathbb{R}^M$ denotes the GLM weights for latent state $k \in {1,..,K}$. Thus, the probability of success ($y_t = 1$, which can correspond to a given choice in a binary set up, or a spike count for a time bin; in our case, corresponds to a leftward choice) given the input vector $\boldsymbol{x}_t$ is given by:
+where $\mathbf{x}_{t}\in \mathbb{R}^M$ corresponds to the input at time $t$ and $\mathbf{w}_{z_t}\in \mathbb{R}^M$ denotes the GLM weights vector corresponding to the latent state $z$ active at time $t$. In the Bernoulli case, the probability of $y_t = 1$ (which can correspond to a given choice in a binary set up, or a spike count for a time bin) given the input vector $\boldsymbol{x}_t$ and the current state $z_t$ is characterized by:
 
 \begin{align}
 p(y_t=1\mid\boldsymbol{x}_t, z_t = k)  = \frac{1}{1+exp(-\boldsymbol{x}_t \cdot \boldsymbol{w}_k)}
 \end{align}
-considering a Bernoulli GLM with a logistic inverse link function.
+considering a logistic inverse link function.
+
+```{admonition} Note
+:class: tip
+- List of observation models
+- List of inverse link functions per model
+```
 
 +++
 
 
-## How to fit a GLM-HMM?: EM
+## How to fit a GLM-HMM?
 
-When fitting a GLM-HMM, the goal is to learn a set of parameters $\theta \equiv \{A,\boldsymbol{\pi},\boldsymbol{w}\}$:
-\begin{itemize}
-    \item the transition matrix $A \in \mathbb{R}^{K \times K}$
-    \item the initial state distribution $\boldsymbol{\pi} \in \mathbb{R}$
-    \item the set of weigths that influence the activy in each state $\{\boldsymbol{w}_k\}^K_{k=1}$ with $\boldsymbol{w}_k \in \mathbb{R}$
-\end{itemize}
-For this, we want to find the values that maximize the joint probability of the observations (choices or neural activity $\boldsymbol{y}$), the features ($\boldsymbol{X}$), $D \equiv \{\boldsymbol{y}, \{\boldsymbol{x}\}^T_{t=1}\}$ and the states ($\boldsymbol{z}$) given the parameters:
+When fitting a GLM-HMM, the goal is to learn the set of parameters $\boldsymbol{\theta} \equiv \{A,\boldsymbol{\pi},\{\boldsymbol{w}_k\}_{k=1}^K\}$ :
+
+- the transition matrix $\boldsymbol{A} \in \mathbb{R}^{K \times K}$
+- the initial state distribution $\boldsymbol{\pi} \in \mathbb{R}^K$
+- the set of weights that influence the activity in each state $\{\boldsymbol{w}_k\}_{k=1}^K$ with $\boldsymbol{w}_k \in \mathbb{R}^M$
+
+that maximize the likelihood of the observed data. We can obtain the likelihood function by marginalizing over the latent variables:
+\begin{equation}
+p(\mathbf{y}|\mathbf{x}, \boldsymbol{\theta}) = \sum_{Z} p(\boldsymbol{y}, \boldsymbol{z} | \boldsymbol{x},\boldsymbol{\theta})
+\end{equation}
 
  \begin{equation}
-     p(D,\boldsymbol{z} | \theta) = p(z_1|\boldsymbol{\pi}) \left[\prod_{t=2}^Tp(z_t \mid z_{t-1},A)\right]\prod_{m=1}^T p(y_m|z_m, \boldsymbol{w}_m)
+     p(\boldsymbol{y}|\boldsymbol{\theta}) = p(z_1|\boldsymbol{\pi}) \left[\prod_{t=2}^Tp(z_t \mid z_{t-1},A)\right]\prod_{m=1}^T p(y_m|z_m, \boldsymbol{w}_m)
  \end{equation}
 
-We can obtain $\theta$ using the Expectation Maximization (EM) algorithm \citep{bishopPatternRecognitionMachine2006}. It consists of alternating between two steps: "Expectation" and "Maximization" or E and M until convergence. During the E-step, we compute the 'expected complete data log-likelihood'(ECLL), which is a lower bound on the log-likelihood of the data given the parameters, using some initial selection of the parameters $\theta^{\text{old}}$:
+and we obtain this from the joint distribution over both latent and observed variables:
+
+ \begin{equation}
+     p(\boldsymbol{y},\boldsymbol{z} | \theta) = p(z_1|\boldsymbol{\pi}) \left[\prod_{t=2}^Tp(z_t \mid z_{t-1},A)\right]\prod_{m=1}^T p(y_m|z_m, \boldsymbol{w}_m)
+ \end{equation}
+
+For this, we want to find the values that maximize the joint probability of the observations (choices or neural activity), the input data, the features and the states given the model parameters $\theta$:
+
+We can obtain $\theta$ using the Expectation Maximization (EM) algorithm (Bishop, 2006) [PENDING]()</a>. It consists of alternating between two steps: "Expectation" and "Maximization" or E and M until convergence. During the E-step, we compute the 'expected complete data log-likelihood'(ECLL), which is a lower bound on the log-likelihood of the data given the parameters, using some initial selection of the parameters $\theta^{\text{old}}$:
 
 \begin{equation}
 \label{eq:ECLL_def}
@@ -96,7 +128,7 @@ into Eq. \eqref{eq:ECLL_def} and make use of the definitions of $\gamma$ and $\x
 The single and joint state probabilities, $\gamma_{t,k}$ and $\xi_{t,j,k}$ respectively, are estimated using the forward backward algorithm
 
 ### How to fit a GLM-HMM?: Forward Backward Algorithm
-During the E-step the single and joint posterior state probabilities for all trials and states are estimated using the forward-backward algorithm at the current setting of the GLM-HMM parameters, $\theta^{\text{old}}$. \\
+During the E-step the single and joint posterior state probabilities for all trials and states are estimated using the forward-backward algorithm at the current setting of the GLM-HMM parameters, $\theta^{\text{old}}$.
 
 The goal of the forward pass is to obtain, for each trial t and each state k, the quantity:
 
@@ -109,7 +141,7 @@ which represents the posterior probability of the acitivy up until trial $t$ and
 \alpha_{1,k} = \boldsymbol{\pi}_k p(\boldsymbol{y}_{1} \mid z_1,\boldsymbol{x}_1, \boldsymbol{w}_k)
 \end{equation}
 
-where, in our case,  $p(\boldsymbol{y}_{1} \mid z_1,\boldsymbol{x}_1, \boldsymbol{w}_k)$ is the usual Bernoulli GLM distribution mentioned in an equation above. \\
+where, in our case,  $p(\boldsymbol{y}_{1} \mid z_1,\boldsymbol{x}_1, \boldsymbol{w}_k)$ is the usual Bernoulli GLM distribution mentioned in an equation above.
 
 For trials $1<t \leq T$, we can obtain the probabilities:
 
@@ -143,7 +175,7 @@ And do similarly for $\xi$:
 \end{equation}
 where $p(y_{t+1}\mid z_{t+1} = k, \boldsymbol{x}_{t+1}, \boldsymbol{w}_k)$ is the Bernoulli GLM distribution.
 
-In the *M step*, after having run the forward-backward algorithm, we maximize the ECLL with respect to the GLM-HMM parameters, $\theta$. For the initial distribution $\pi$ and the transition matrix A, this results in the closed form updates:
+In the *M step*, after having run the forward-backward algorithm, we maximize the ECLL with respect to the GLM-HMM parameters, $\theta$. For the initial distribution $\pi$ and the transition matrix $\boldsymbol{A}$, this results in the closed form updates:
 \begin{align}
     \pi_k^\text{new} 
     & = \frac{\gamma_{1,k}}{\sum_{j=1}^K\gamma_{1,j}} \\
@@ -152,7 +184,7 @@ In the *M step*, after having run the forward-backward algorithm, we maximize th
 The last element we are left with is the likelihood of the GLM weights, which can be updated numerically, with certain caveats. From [](#eq_ecll_separated), it is easy to see that the optimization problem consists of maximizing three terms independently. There are analytical updates for $\pi$ and $A$, but the weights $w$ defining the emission probabilities must be estimated using gradient descent.
 
 ## Problems with EM Fitting
-This procedure is guaranteed to find a larger likelihood solution at each iteration, but there is no guaranty of a local optimum  in all landscapes \citep{salakhutdinovOptimizationEMExpectationconjugategradient2003a}. Moreover, even with a convex emissions probability distribution, a global optimum is not guaranteed \citep{salakhutdinovOptimizationEMExpectationconjugategradient2003a}. This is not exclusive to GLM-HMMs, but general to the use of EM, which is known for being sensitive to the values of the initialization. Thus, efficient initialization, as well as a clear understanding of the algorithm and its components, are key to ensure that we get to the best local maximum of the likelihood function. 
+This procedure is guaranteed to find a larger likelihood solution at each iteration, but there is no guaranty of a local optimum  in all landscapes (Salakhutdinov, 2003) [PENDING](). Moreover, even with a convex emissions probability distribution, a global optimum is not guaranteed (Salakhutdinov, 2003) [PENDING](). This is not exclusive to GLM-HMMs, but general to the use of EM, which is known for being sensitive to the values of the initialization. Thus, efficient initialization, as well as a clear understanding of the algorithm and its components, are key to ensure that we get to the best local maximum of the likelihood function. 
 
 ## Given this framework, what can we be interested in knowing?
 ## Most likely sequence of states: Viterbi algorithm
