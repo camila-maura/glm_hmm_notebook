@@ -379,11 +379,11 @@ Similarly, we can do this process for all the sessions
 stim_left = df_trials['contrastLeft'].reset_index(drop=True)
 stim_right = df_trials['contrastRight'].reset_index(drop=True)
 rewarded = df_trials['feedbackType'].reset_index(drop=True)
-choices = df_trials['choice'].reset_index(drop=True)
+choices = df_trials['choice'].reset_index(drop=True).to_numpy()
 session = df_trials['session'].reset_index(drop=True).to_numpy()
 
 # Select valid choices
-valid_choices_idx = np.where(~choices.isin([viol_val]))[0]
+valid_choices_idx = np.where(~(choices == viol_val))[0]
 
 # Create stim vector
 stim_left = np.nan_to_num(stim_left, nan=0)
@@ -420,7 +420,7 @@ X = np.copy(X_unnormalized)
 X[:, 0] = zscore(X[:, 0])
 
 # For fitting a Bernoulli, our variables need to be in 0-1 space. So we will remap them so 1: Left and 0: Right
-choices.replace({1: 1, -1: 0}, inplace = True)
+choices = np.where(choices == -1, 0, choices)
 ```
 
 Importantly, do not do 3000 trials at once! Instead, they generally do several sessions of 100-300 trials, and we use all the sessions together to fit our model. For our model to be accurate, we need to tell it when our session boundaries are: we don't want it to compute all sessions as if they were one. 
@@ -478,11 +478,11 @@ For a more detailed example of how initialization affects convergence and interp
 
 +++
 
-Once we created our object, we can fit our model. The fit function takes two mandatory arguments: the design matrix ```X```we created in section 02 and the ```choices_tsd```.
+Once we created our object, we can fit our model. The fit function takes two mandatory arguments: the design matrix ```X```we created in section 02 and the ```choices```. Additionally, we will also include ```new_sess_mouse```, the new session indicator.
 
 ```{code-cell} ipython3
 model.fit(X, 
-          np.asarray(choices),
+          choices,
           is_new_session=new_sess_mouse
 )
 ```
@@ -640,7 +640,7 @@ To better understand the temporal structure of decision making behavior, we can 
 # Compute smooth_proba
 posteriors = model.smooth_proba(
     X, 
-    np.asarray(choices),
+    choices,
     is_new_session=new_sess_mouse
 )
 print(f"First five osteriors \n{posteriors[:5]} \n")
@@ -655,12 +655,8 @@ print(
 And we can plot it!
 
 ```{code-cell} ipython3
-sess_ex_1 = np.where(session == '66f20f92-171f-4cc5-aca9-69fc3cb6370f')[0]
-posteriors[sess_ex_1]
-```
-
-```{code-cell} ipython3
 :tags: [hide-input]
+
 
 def plot_posteriors(posteriors):
     # Pick three sessions to plot
@@ -693,9 +689,9 @@ def plot_posteriors(posteriors):
             if i == 0:
                 ax[i].set_xticks(
                     [
-                        sess_ex[0], 
-                        sess_ex[0] + 45, 
-                        sess_ex[0] + 90
+                        0, 
+                        45, 
+                        90
                     ], 
                     [
                         "0", 
@@ -712,9 +708,9 @@ def plot_posteriors(posteriors):
             else:
                 ax[i].set_xticks(
                     [
-                        sess_ex[0], 
-                        sess_ex[0] + 45, 
-                        sess_ex[0] + 90
+                        0, 
+                        45, 
+                        90
                     ], 
                     [
                         " ", 
@@ -733,7 +729,7 @@ def plot_posteriors(posteriors):
 plot_posteriors(posteriors)
 ```
 
-In these sessions, the posterior over latent states can be tracked at each trial, revealing strong confidence in state assignments and extended periods where a single state persists across consecutive trials. This pattern is inconsistent with the short, transient lapses assumed in earlier lapse-based models.
+In these sessions, the posterior over latent states can be tracked at each trial, revealing strong confidence in state assignments and extended periods where a single state persists across consecutive trials. This pattern is inconsistent with the short, transient lapses assumed in lapse-based models.
 
 +++
 
@@ -754,7 +750,7 @@ This function takes three mandatory parameters, a matrix of predictors X of shap
 # get output of viterbi in one-hot encoding
 decoded_states = model.decode_state(
     X,
-    np.asarray(choices),
+    choices,
     is_new_session=new_sess_mouse,
     state_format = "one-hot"
 )
@@ -782,7 +778,7 @@ correct_ans_task = np.sign(non_zero_contrast)
 correct_ans_task_remapped = (correct_ans_task+ 1) / 2
 
 # Get accuracy i.e how many choices match / how many choices were made
-correct_ans_mouse = np.sum(np.asarray(choices)[non_zero_contrast_loc] == correct_ans_task_remapped) 
+correct_ans_mouse = np.sum(choices[non_zero_contrast_loc] == correct_ans_task_remapped) 
 
 total_accuracy = correct_ans_mouse/len(correct_ans_task)
 
@@ -802,7 +798,7 @@ for state in range(n_states):
     
     # Get contrast and choices for this state
     signed_contrast_this_state = signed_contrast[idx_this_state]
-    choices_this_state = np.asarray(choices)[idx_this_state]
+    choices_this_state = choices[idx_this_state]
     
     # See where the input is not 0
     not_zero_contrast_loc_this_state = np.where(signed_contrast_this_state != 0)[0]
@@ -878,7 +874,7 @@ def plot_accuracy_and_occupancy(frac_occupancy, accuracies_to_plot):
 plot_accuracy_and_occupancy(frac_occupancy_viterbi, accuracies_to_plot_viterbi)
 ```
 
-According to state occupancy derived with the Viterbi algorithm, this mouse spent the majority of the trials (71%) in the engaged state and a lesser portion of trials in the other two states (29%). We can see that even though this mouse had an overall accuracy of 80.36%, it achieved a higher accuracy of 86.79% in the "engaged" state compared to 66.07% and 62.16% in the "bias left" and "bias right", respectively.
+According to state occupancy derived with the Viterbi algorithm, this mouse spent the majority of the trials (71%) in the engaged state and a lesser portion of trials in the other two states (29%). We can see that even though this mouse had an overall accuracy of 80.36%, it achieved a higher accuracy of 86.93% in the "engaged" state compared to 66.03% and 62.15% in the "bias left" and "bias right", respectively.
 
 +++
 
@@ -908,7 +904,7 @@ for state in range(n_states):
     idx_per_state.append(np.where(posteriors[:, state] >= 0.9)[0])
 ```
 
-With this segmentation, we can calculate accuracy in the exact same manner as in 4.5.1.
+With this segmentation, we can calculate accuracy in the exact same manner as in 4.4.1.
 
 ```{code-cell} ipython3
 :tags: [hide-input]
@@ -924,7 +920,7 @@ def get_accuracies_to_plot(idx_per_state, total_accuracy=total_accuracy, n_state
 
         # Get contrast and choices for this state
         signed_contrast_this_state = signed_contrast[idx_this_state]
-        choices_this_state = np.asarray(choices)[idx_this_state]
+        choices_this_state = choices[idx_this_state]
         
         # See where the input is not 0
         not_zero_contrast_loc_this_state = np.where(signed_contrast_this_state != 0)[0]
@@ -952,9 +948,9 @@ accuracies_to_plot_smooth_proba = get_accuracies_to_plot(idx_per_state)
 plot_accuracy_and_occupancy(frac_occupancy_smooth_proba,accuracies_to_plot_smooth_proba)
 ```
 
-According to state occupancy derived by using the most likely state with the posterior distribution on a trial by trial basis, this mouse spent the majority of the trials (69%) in the engaged state and a lesser portion of trials in the other two states (32%). We can see that even though this mouse had an overall accuracy of 80.36%, it achieved a higher accuracy of 88.80% in the "engaged" state compared to 61.78% and 58.78% in the "bias left" and "bias right", respectively.
+According to state occupancy derived by using the most likely state with the posterior distribution on a trial by trial basis, this mouse spent the majority of the trials (68%) in the engaged state and a lesser portion of trials in the other two states (32%). We can see that even though this mouse had an overall accuracy of 80.36%, it achieved a higher accuracy of 88.89% in the "engaged" state compared to 61.40% and 59.05% in the "bias left" and "bias right", respectively.
 
-Here, we obtained different results than in 4.5.1. This can be explained by the use of different algorithms for segmenting the trials. While Viterbi finds the most likely sequence of states as a whole, the method in 4.5.1 calculates what the most likely state is on a trial by trial basis, and only keeps the state with large confidence (>90%).
+Here, we obtained different results than in 4.4.1. This can be explained by the use of different algorithms for segmenting the trials. While Viterbi finds the most likely sequence of states as a whole, the method in 4.5.1 calculates what the most likely state is on a trial by trial basis, and only keeps the state with large confidence (>90%).
 
 +++
 
@@ -1004,21 +1000,19 @@ After fitting, we saw that across sessions, behavior could be described as a mix
 
 ## Additional resources [pending]
 - [NeMoS background on GLM-HMMs - Pending]()
-- Bishop (2006) Chapter 13 "Sequential Data": Specially section 13.2, "Hidden Markov Models", provides an overview of MLE for HMMs, the forward-backward algorithm and the viterbi algorithm.
-- [Zoe Ashwood's SSM tutorial on GLM-HMMs](https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb): ?
+- [Bishop (2006) Chapter 13 "Sequential Data"](https://www.microsoft.com/en-us/research/wp-content/uploads/2006/01/Bishop-Pattern-Recognition-and-Machine-Learning-2006.pdf): Specially section 13.2, "Hidden Markov Models", provides an overview of MLE for HMMs, the forward-backward algorithm and the viterbi algorithm.
+- [Zoe Ashwood's SSM tutorial on GLM-HMMs](https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb): this educational notebook explains GLM-HMMs and fitting with MLE and MAP.
 - [GLM-HMMs blogpost by Camila Ucheoma](https://anneurai.net/2024/01/26/a-glm-hmm-deep-dive/): this blogpost provides a summary of Ashwood et al. (2022) work and a brief explanation of GLM-HMMs
 
 +++
 
 ## References
-<a id="ref1a"><a href="#cite1a">[1a]</a> <a id="ref1b"><a href="#cite1b">[1b]</a> <a id="ref1c"><a href="#cite1c">[1c]</a> <a id="ref1d"><a href="#cite1d">[1d]</a> <a id="ref1e"><a href="#cite1e">[1e]</a> Ashwood, Z. C., Roy, N. A., Stone, I. R., Laboratory, I. B., Urai, A. E., Churchland, A. K., Pouget, A., & Pillow, J. W. (2022). Mice alternate between discrete strategies during perceptual decision-making. Nature Neuroscience, 25(2), 201–212.
+<a id="ref1a"><a href="#cite1a">[1a]</a> <a id="ref1b"><a href="#cite1b">[1b]</a> <a id="ref1c"><a href="#cite1c">[1c]</a> <a id="ref1d"><a href="#cite1d">[1d]</a> <a id="ref1e"><a href="#cite1e">[1e]</a> [Ashwood, Z. C., Roy, N. A., Stone, I. R., Laboratory, I. B., Urai, A. E., Churchland, A. K., Pouget, A., & Pillow, J. W. (2022). Mice alternate between discrete strategies during perceptual decision-making. Nature Neuroscience, 25(2), 201–212.](https://doi.org/10.1038/s41593-021-01007-z)
 
-<a id="ref2a"><a href="#cite2a">[2a]</a><a id="ref2b"> <a href="#cite2b">[2b]</a> <a id="ref2c"><a href="#cite2c">[2c]</a> The International Brain Laboratory, Aguillon-Rodriguez, V., Angelaki, D., Bayer, H., Bonacchi, N., Carandini, M., Cazettes, F., Chapuis, G., Churchland, A. K., Dan, Y., Dewitt, E., Faulkner, M., Forrest, H., Haetzel, L., Häusser, M., Hofer, S. B., Hu, F., Khanal, A., Krasniak, C., … Zador, A. M. (2021). Standardized and reproducible measurement of decision-making in mice. eLife, 10, e63711. https://doi.org/10.7554/eLife.63711
+<a id="ref2a"><a href="#cite2a">[2a]</a><a id="ref2b"> <a href="#cite2b">[2b]</a> <a id="ref2c"><a href="#cite2c">[2c]</a> [The International Brain Laboratory, Aguillon-Rodriguez, V., Angelaki, D., Bayer, H., Bonacchi, N., Carandini, M., Cazettes, F., Chapuis, G., Churchland, A. K., Dan, Y., Dewitt, E., Faulkner, M., Forrest, H., Haetzel, L., Häusser, M., Hofer, S. B., Hu, F., Khanal, A., Krasniak, C., … Zador, A. M. (2021). Standardized and reproducible measurement of decision-making in mice. eLife, 10, e63711.](https://doi.org/10.7554/eLife.63711)
 
-<a id="ref3"><a href="#cite3">[3]</a> Burgess, C. P., Lak, A., Steinmetz, N. A., Zatka-Haas, P., Bai Reddy, C., Jacobs, E. A. K., Linden, J. F., Paton, J. J., Ranson, A., Schröder, S., Soares, S., Wells, M. J., Wool, L. E., Harris, K. D., & Carandini, M. (2017). High-Yield Methods for Accurate Two-Alternative Visual Psychophysics in Head-Fixed Mice. Cell Reports, 20(10), 2513–2524. https://doi.org/10.1016/j.celrep.2017.08.047
+<a id="ref3"><a href="#cite3">[3]</a> [Burgess, C. P., Lak, A., Steinmetz, N. A., Zatka-Haas, P., Bai Reddy, C., Jacobs, E. A. K., Linden, J. F., Paton, J. J., Ranson, A., Schröder, S., Soares, S., Wells, M. J., Wool, L. E., Harris, K. D., & Carandini, M. (2017). High-Yield Methods for Accurate Two-Alternative Visual Psychophysics in Head-Fixed Mice. Cell Reports, 20(10), 2513–2524.](https://doi.org/10.1016/j.celrep.2017.08.047)
 
-<a id="ref4"><a href="#cite4">[4]</a> Escola, S., Fontanini, A., Katz, D., & Paninski, L. (2011). Hidden Markov models for the stimulus-response relationships of multistate neural systems. Neural Computation, 23(5), 1071–1132. https://doi.org/10.1162/NECO_a_00118
+<a id="ref4"><a href="#cite4">[4]</a> [Escola, S., Fontanini, A., Katz, D., & Paninski, L. (2011). Hidden Markov models for the stimulus-response relationships of multistate neural systems. Neural Computation, 23(5), 1071–1132.](https://doi.org/10.1162/NECO_a_00118)
 
-<a id="ref4"><a href="#cite4">[4]</a> Bishop, C. M. (2006). Pattern recognition and machine learning. Springer.
-
-+++
+<a id="ref5"><a href="#cite5">[5]</a> [Bishop, C. M. (2006). Pattern recognition and machine learning. Springer.](https://www.microsoft.com/en-us/research/wp-content/uploads/2006/01/Bishop-Pattern-Recognition-and-Machine-Learning-2006.pdf)
