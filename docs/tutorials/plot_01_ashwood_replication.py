@@ -29,7 +29,7 @@
 # 3. Show how to fit choice data using a GLM-HMM
 # 4. Show how to interpret GLM-HMM fitting results
 #
-# Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs. If you need an explanation, please refer to our [background section on GLMs and GLM-HMMs - PENDING](). Moreover, if you already have a good understanding of GLM-HMMs and are interested in different heuristics you could use to overcome difficulties in the fitting process, please refer to our [background section for GLM HMM fitting - PENDING](), which includes different initialization methods and fine-grain details of the fitting algorithm.
+# Importantly, throughout the notebook we will assume you already have a solid theoretical understanding of GLMs and GLM-HMMs.
 
 # %% [markdown]
 # ## 00. Imports
@@ -245,7 +245,7 @@ prev_choice_basis = nmo.basis.HistoryConv(1)
 stimuli_basis = nmo.basis.IdentityEval()
 
 # %% [markdown]
-# However, we are still missing one predictor: win-stay lose-shift. This is an interaction of previous choice with previous reward. To capture interaction between variables, we can use a [multiplicative basis object - PENDING](), which takes the outer product of the elements that compose it.
+# However, we are still missing one predictor: win-stay lose-shift. This is an interaction of previous choice with previous reward. To capture interaction between variables, we can use a [multiplicative basis object](https://nemos.readthedocs.io/en/latest/generated/_basis/nemos.basis._basis.MultiplicativeBasis.html), which takes the outer product of the elements that compose it.
 
 # %%
 # Create lagged reward predictor
@@ -437,11 +437,10 @@ new_sess_mouse[1:] = (session[1:] != session[:-1])
 #
 # The default observation model for the GLM-HMM is Bernoulli, but Categorical (Multinomial), Poisson, Gamma, Negative Binomial and Gaussian observation models are also available. If you want, you can also set a different observation model of your choice and personalize the inverse link function. However, bear in mind that convexity is not guaranteed for all likelihood functions.
 #
-# For more information, refer to Escola et al (2011)<span id="cite4"></span><a href="#ref4">[4]</a> and also to [our notebook on GLM-HMM theoretical underpinnings - PENDING]().
+# For more information, refer to Escola et al (2011).
 # ```
 # ____
 #
-# [PENDING - do not edit because it might change]()
 # If required, you can further personalize the ```GLMHMM``` object settings. Beyond the number of states, the observation model and the inverse link function, you can also initialization functions for to aid parameter estimation. 
 #
 # If you don't set up any initialization settings, you would use the NeMoS defaults:
@@ -464,8 +463,6 @@ print(model)
 # :class: question
 # :class: dropdown
 # When fitting a GLM-HMMs, the likelihood surface is non-convex, and EM-based fitting can converge to different local optima depending on starting values. As a result, different initializations can lead to qualitatively different parameters. In practice, this makes it necessary to either run multiple random restarts or use informed initializations derived from simpler models (e.g. logistic regression or clustering of behavior).
-#
-# For a more detailed example of how initialization affects convergence and interpretation, refer to [our notebook on GLM-HMM theoretical underpinnings - PENDING]()
 # ```
 
 # %% [markdown]
@@ -971,8 +968,7 @@ plot_accuracy_and_occupancy(frac_occupancy_smooth_proba,accuracies_to_plot_smoot
 # After fitting, we saw that across sessions, behavior could be described as a mixture of a small number of latent strategies that persist over multiple trials rather than independent lapses around a single policy. This is visible in the inferred posterior trajectories and in the Viterbi-decoded state sequences, which show extended dwell times within states. State occupancy and performance analyses further showed that behavioral accuracy is not uniform across latent states. The stimulus-driven state yields higher task-aligned performance, while biased states show reduced accuracy, consistent with reduced sensitivity to sensory evidence.
 
 # %% [markdown]
-# ## Additional resources [pending]
-# - [NeMoS background on GLM-HMMs - Pending]()
+# ## Additional resources
 # - [Bishop (2006) Chapter 13 "Sequential Data"](https://www.microsoft.com/en-us/research/wp-content/uploads/2006/01/Bishop-Pattern-Recognition-and-Machine-Learning-2006.pdf): Specially section 13.2, "Hidden Markov Models", provides an overview of MLE for HMMs, the forward-backward algorithm and the viterbi algorithm.
 # - [Zoe Ashwood's SSM tutorial on GLM-HMMs](https://github.com/zashwood/ssm/blob/master/notebooks/2b%20Input%20Driven%20Observations%20(GLM-HMM).ipynb): this educational notebook explains GLM-HMMs and fitting with MLE and MAP.
 # - [GLM-HMMs blogpost by Camila Ucheoma](https://anneurai.net/2024/01/26/a-glm-hmm-deep-dive/): this blogpost provides a summary of Ashwood et al. (2022) work and a brief explanation of GLM-HMMs
